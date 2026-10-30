@@ -53,6 +53,11 @@ safemed/
     └── HANDBOOK.md      project handbook
 ```
 
+## For new team members
+
+Start with **[docs/SETUP.md](docs/SETUP.md)** - prerequisites, cloning,
+running the stack, the branching workflow, and troubleshooting.
+
 ## Documentation
 
 See `docs/HANDBOOK.md` for the design decisions behind this project and an
