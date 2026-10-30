@@ -223,6 +223,200 @@ Nobody commits directly to `main`. This isn't bureaucracy — it means every cha
 
 ---
 
+## Chapter 3 — The First Running System
+
+*Written after the milestone: three containers running, `/health` reporting `database: connected`, and the repository live on GitHub.*
+
+### 3.1 What we actually did
+
+In one sitting we went from an empty folder to a running multi-service application:
+
+1. Installed WSL2, then Docker Desktop (Windows 11 Home requires WSL2 to run Linux containers)
+2. Created the repository skeleton
+3. Started PostgreSQL, Redis, and a FastAPI application together with one command
+4. Confirmed the API could reach the database
+5. Put it all under version control and pushed it to GitHub
+
+That ordering is deliberate and worth internalising: **get something running end to end before adding features.** A thin slice that works beats a thick slice that doesn't, because every later problem is then a *change* to a working system rather than a mystery in a system that has never worked.
+
+### 3.2 Why Docker Compose, in concrete terms
+
+Our system needs three processes running at once. Without Docker, each developer would have to install PostgreSQL, install Redis, install the right Python version, create a database, create a user, set a password, and keep all three machines in agreement.
+
+With Compose, that entire setup is **a file in the repository**. Chima and Pacifique run:
+
+```bash
+git clone ...
+Copy-Item .env.example .env
+docker compose up --build
+```
+
+and have an identical system. The setup is now *code*, reviewed and versioned like any other code. This is the idea behind "infrastructure as code," and it's the single biggest reason team projects don't stall in week three.
+
+### 3.3 Reading `docker-compose.yml`
+
+```yaml
+services:
+  db:
+    image: postgres:16-alpine
+```
+
+**`image`** names a pre-built image from Docker Hub. `16` pins the major version — never use `latest` in a project you'll be graded on, because the image can change under you. **`alpine`** is a minimal Linux base: smaller download, faster startup.
+
+```yaml
+    ports:
+      - "5433:5432"
+```
+
+**Port mapping is `host:container`.** PostgreSQL listens on 5432 *inside* its container. We expose it as **5433** on your machine so that if you ever install PostgreSQL natively, the two don't collide. Redis is mapped 6380→6379 for the same reason.
+
+Important consequence: **inside** the Docker network, services reach each other on their *internal* ports. That's why `DATABASE_URL` says `@db:5432`, not `5433`. The hostname `db` is the service name — Docker runs a DNS server that resolves service names to container addresses.
+
+```yaml
+    volumes:
+      - safemed_pgdata:/var/lib/postgresql/data
+```
+
+A **named volume**: storage managed by Docker that outlives the container. Without it, every `docker compose down` would erase your entire database. The data is not in your project folder, which is why it isn't in git.
+
+```yaml
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+```
+
+A **health check** is a command Docker runs repeatedly to decide whether a service is genuinely ready. PostgreSQL accepts TCP connections seconds before it's ready to serve queries, so "the port is open" is not the same as "the database works."
+
+```yaml
+  api:
+    depends_on:
+      db:
+        condition: service_healthy
+```
+
+This is why it matters. `depends_on` alone only controls *start order*; it does not wait for readiness. With `condition: service_healthy`, the API container genuinely waits until the health check passes. Without it you get an intermittent crash on startup — the kind of bug that appears on someone else's slower laptop and not on yours.
+
+```yaml
+    volumes:
+      - ./backend:/app
+```
+
+A **bind mount**: your local `backend/` folder appears inside the container at `/app`. Edit a file on Windows and the container sees it immediately, so `--reload` restarts the server. Without this you'd rebuild the image after every edit.
+
+### 3.4 Reading the Dockerfile — why the order of lines matters
+
+```dockerfile
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+```
+
+This looks redundant — why not copy everything once? Because **Docker caches each instruction as a layer**, and a layer is rebuilt only if it or something before it changed.
+
+If we copied all the code first, editing one line in `main.py` would invalidate the cache and reinstall every package — two minutes per rebuild. By copying only `requirements.txt` first, the install layer is reused until the dependency list itself changes. Editing code rebuilds in about two seconds.
+
+This is a standard pattern in every well-written Dockerfile. Knowing *why* is the sort of thing that separates copying examples from understanding them.
+
+```dockerfile
+ENV PYTHONUNBUFFERED=1
+```
+
+Python normally buffers output. Inside a container that means your print statements and logs may not appear until the buffer fills — so a crashing app appears to say nothing. This flag sends output straight through.
+
+### 3.5 Configuration and secrets
+
+Database passwords are never written in code. They come from **environment variables**, which Compose reads from `.env`.
+
+Two files, deliberately:
+
+| File | Committed? | Purpose |
+|---|---|---|
+| `.env` | **No** (git-ignored) | Real values for your machine |
+| `.env.example` | **Yes** | The list of variables, with safe placeholder values |
+
+`.env.example` is how a teammate knows what to set without you sending them secrets over chat. Right now our `.env` only holds a local development password, but the habit matters: later this file will hold a real API key, and a leaked key in a public repo is a genuine incident.
+
+`app/core/config.py` reads these with **pydantic-settings**, which validates them. If `DATABASE_URL` is missing, the app fails immediately at startup with a clear message, rather than mysteriously failing on the first database query.
+
+### 3.6 The FastAPI application
+
+**Engine vs. session** — the distinction that confuses everyone at first:
+
+- The **engine** is created once for the whole application. It owns a *pool* of database connections, because opening a connection is slow and we want to reuse them.
+- A **session** is created per request. It's a unit of work: a scratch space of pending changes that is either committed together or thrown away together.
+
+`get_db()` is a **dependency**. FastAPI calls it before your endpoint, passes the session in, and — because of the `try/finally` — always closes it afterwards, even if your code raised an exception. This pattern is called *dependency injection*: the endpoint declares what it needs and gets it, rather than constructing it itself. It also makes testing easy, because a test can substitute a different database.
+
+**Why `/health` checks the database:**
+
+```python
+db.execute(text("SELECT 1"))
+```
+
+A health endpoint that only returns `{"status": "ok"}` proves only that Python is running. Ours runs a trivial query, so it proves the API can actually reach PostgreSQL. It reports the two independently, so when something breaks you know *which* thing broke. This same endpoint becomes the system status panel in the final demo.
+
+**`/docs` for free.** FastAPI reads your type hints and generates interactive API documentation automatically. Open it, click an endpoint, press "Try it out," and it calls your live API. We did not write a line of it. It will be part of the demo.
+
+### 3.7 Version control, and what each git command actually does
+
+```powershell
+git init          # create the .git folder - this directory is now a repository
+git branch -M main   # rename the default branch to 'main'
+git add .         # stage: mark files to be included in the next snapshot
+git commit -m ""  # snapshot: save the staged files permanently with a message
+git remote add origin <url>   # record where the shared copy lives
+git push -u origin main       # upload commits; -u remembers the pairing
+```
+
+**Staging exists so that a commit is a deliberate, meaningful unit** rather than "whatever happened to be saved." You can commit two files and leave a third half-finished one out.
+
+**An error worth understanding.** We hit this:
+
+```
+error: src refspec main does not match any
+```
+
+The push ran before any commit existed. A **branch is just a movable pointer to a commit** — with zero commits, `main` doesn't exist yet, so there was nothing to push. Git's error message describes the internals rather than the cause, which is common; learning to translate them is part of the job.
+
+**What `.gitignore` saved us from.** `.env` was excluded automatically. Had it been committed to a public repo, the fix isn't just deleting it — the value stays in the history and must be treated as compromised. Prevention is the only clean option.
+
+### 3.8 Why it's already on GitHub, with one commit
+
+Your professor's guidelines require that *"repository activity should reflect meaningful development progress, contributions from team members, and appropriate documentation."*
+
+A repository with one commit on the day it was created, then thirty on the last night, tells a story nobody wants to read. Committing from day one, in small meaningful units, produces an honest history that shows how the project was built.
+
+From here, the team workflow is:
+
+```
+branch → code + tests → push → pull request → review → merge to main
+```
+
+Nobody commits to `main` directly. That guarantees `main` always works, every change is seen by another person, and the history shows three people collaborating — not one person committing everything.
+
+### 3.9 Try these yourself
+
+Understanding comes from poking at it:
+
+1. **Break the database on purpose.** In a second terminal: `docker compose stop db`, then reload `/health`. It should still respond, with `database` reporting unavailable rather than crashing. That's deliberate design — a system that reports its own degradation. Restart with `docker compose start db`.
+2. **Watch hot reload.** Change the text in the `root()` endpoint in `main.py`, save, and watch the API terminal restart by itself. That's the bind mount plus `--reload`.
+3. **Look inside the database.** `docker compose exec db psql -U safemed -d safemed` opens a SQL prompt inside the container. Type `\dt` to list tables — there are none yet. Type `\q` to exit. You'll run this again after the first migration.
+4. **See what's running.** `docker compose ps` lists the services and their health.
+
+### 3.10 Where we are
+
+| Piece | Status |
+|---|---|
+| PostgreSQL 16 | Running, data persists in a named volume |
+| Redis 7 | Running, waiting for the worker |
+| FastAPI | Running with hot reload |
+| `/health` | Confirms database connectivity |
+| `/docs` | Auto-generated, interactive |
+| Repository | Public on GitHub, `.env` excluded |
+
+**Next:** the data model — patients, caregivers, consent grants, medications, dose events, safety findings, notifications, and the audit log — plus Alembic migrations so three developers can keep their databases identical.
+
+---
+
 ## Glossary
 
 | Term | Plain meaning |
@@ -243,5 +437,3 @@ Nobody commits directly to `main`. This isn't bureaucracy — it means every cha
 | **Migration vs. seed** | Migration changes structure; seed inserts starting data |
 
 ---
-
-*Chapter 3 (the repository layout and the first running service) will be added once the environment is up.*
