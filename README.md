@@ -55,8 +55,10 @@ safemed/
 
 ## For new team members
 
-Start with **[docs/SETUP.md](docs/SETUP.md)** - prerequisites, cloning,
-running the stack, the branching workflow, and troubleshooting.
+1. **[docs/SETUP.md](docs/SETUP.md)** - install everything and get the project
+   running. You do this once.
+2. **[docs/WORKFLOW.md](docs/WORKFLOW.md)** - how to open the project in VS Code,
+   pick up a task, write code, and open a pull request. You do this every day.
 
 ## Documentation
 
