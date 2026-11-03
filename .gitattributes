@@ -1,0 +1,31 @@
+# Keep line endings consistent across Windows and macOS.
+#
+# Victory works on Windows (which ends lines with CRLF); Chima and Pacifique
+# work on macOS (which uses LF). Without this file, every file one of us saves
+# looks like every single line changed to the others - PR diffs become
+# unreadable and merge conflicts appear where there is no real disagreement.
+#
+# "text=auto eol=lf" means: store everything in the repository with LF, and let
+# each machine use whatever its editor prefers locally.
+
+* text=auto eol=lf
+
+# Windows-only files that must keep CRLF to run correctly.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Shell scripts must keep LF or they will not execute inside Linux containers.
+*.sh text eol=lf
+
+# Binary files - never translate these.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.zip binary
