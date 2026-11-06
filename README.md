@@ -53,6 +53,33 @@ safemed/
     └── HANDBOOK.md      project handbook
 ```
 
+## Team: start here
+
+1. **[docs/TEAM_GUIDE.md](docs/TEAM_GUIDE.md)** - who does what, how we use
+   GitHub and VS Code, and a complete worked example of taking one task from
+   start to merged. **Read this first.**
+2. [docs/SETUP.md](docs/SETUP.md) - installing everything. Done once.
+3. [docs/WORKFLOW.md](docs/WORKFLOW.md) - git command reference for daily use.
+4. [docs/API_CONTRACT.md](docs/API_CONTRACT.md) - the exact request and
+   response shapes our code exchanges.
+5. [docs/HANDBOOK.md](docs/HANDBOOK.md) - why the project is built this way.
+
+## Repository layout
+
+```
+safemed/
+├── docker-compose.yml   all services: database, redis, api
+├── backend/             FastAPI application
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── app/
+│       ├── main.py      application entry point
+│       ├── core/        configuration
+│       └── db/          database engine and sessions
+└── docs/
+    └── HANDBOOK.md      project handbook
+```
+
 ## For new team members
 
 1. **[docs/SETUP.md](docs/SETUP.md)** - install everything and get the project
