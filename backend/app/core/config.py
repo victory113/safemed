@@ -18,6 +18,12 @@ class Settings(BaseSettings):
 
     ENVIRONMENT: str = "development"
 
+    # RxNorm: the US standard drug vocabulary. Public, no API key.
+    # The timeout is short on purpose - a slow lookup must never hold up
+    # saving a medication.
+    RXNORM_BASE_URL: str = "https://rxnav.nlm.nih.gov"
+    RXNORM_TIMEOUT_SECONDS: float = 2.0
+
     PROJECT_NAME: str = "SafeMed"
     API_V1_PREFIX: str = "/api/v1"
 
