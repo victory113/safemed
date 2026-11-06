@@ -1,0 +1,88 @@
+/* SafeMed design tokens.
+ *
+ * Every colour, size, and spacing value in the app comes from here. Change a
+ * value once and the whole app follows. Nothing else should hard-code a hex
+ * code or a pixel size.
+ *
+ * Accessibility drives several choices below, because many of our users are
+ * older adults:
+ *   - the base text size is 18px, not the usual 16px
+ *   - every text/background pair meets WCAG AA contrast (4.5:1 or better)
+ *   - severity is never communicated by colour alone
+ */
+
+:root {
+  /* ---- Brand ------------------------------------------------------ */
+  --color-primary:        #0B5394;  /* deep, calm blue - medical, not alarming */
+  --color-primary-hover:  #084273;
+  --color-primary-light:  #E8F0F8;
+
+  /* ---- Neutrals --------------------------------------------------- */
+  --color-text:           #1A1A1A;  /* 16.1:1 on white */
+  --color-text-muted:     #595959;  /*  7.0:1 on white - still AA for body */
+  --color-border:         #CBD2D9;
+  --color-border-strong:  #8A94A0;
+  --color-surface:        #FFFFFF;
+  --color-background:     #F7F9FB;
+
+  /* ---- Severity --------------------------------------------------- *
+   * These map directly to the Severity enum in the backend:
+   * MILD / MODERATE / SEVERE. Each has a dark text colour for contrast
+   * and a pale background tint.                                       */
+  --color-mild:           #1B5E8A;
+  --color-mild-bg:        #E8F2F9;
+  --color-moderate:       #8A5300;
+  --color-moderate-bg:    #FFF4E5;
+  --color-severe:         #B3261E;
+  --color-severe-bg:      #FDECEA;
+
+  --color-success:        #1B5E20;
+  --color-success-bg:     #E8F5E9;
+
+  /* ---- Type ------------------------------------------------------- */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+               Arial, sans-serif;
+
+  --text-xs:    0.875rem;  /* 14px - captions only, never body text */
+  --text-sm:    1rem;      /* 16px */
+  --text-base:  1.125rem;  /* 18px - our body size */
+  --text-lg:    1.375rem;  /* 22px */
+  --text-xl:    1.75rem;   /* 28px */
+  --text-2xl:   2.25rem;   /* 36px */
+
+  --weight-normal:   400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+
+  --leading-tight:  1.25;
+  --leading-normal: 1.6;   /* generous line height aids readability */
+
+  /* ---- Spacing (4px scale) ---------------------------------------- */
+  --space-1:  0.25rem;
+  --space-2:  0.5rem;
+  --space-3:  0.75rem;
+  --space-4:  1rem;
+  --space-5:  1.25rem;
+  --space-6:  1.5rem;
+  --space-8:  2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+
+  /* ---- Shape and depth -------------------------------------------- */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-md: 0 4px 10px rgba(16, 24, 40, 0.08);
+
+  /* ---- Interaction ------------------------------------------------- */
+  /* 44px is the minimum comfortable touch target. Smaller buttons are a
+     real problem for users with reduced dexterity. */
+  --control-height:    2.75rem;  /* 44px */
+  --control-height-lg: 3.25rem;  /* 52px */
+
+  --focus-ring: 3px solid #0B5394;
+  --focus-offset: 2px;
+}
