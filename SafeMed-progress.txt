@@ -1,0 +1,110 @@
+SAFEMED WORK LOG AND CODE WALKTHROUGH
+Saved: November 10, 2026
+Owner: Pacifique Mugisha (pacifique-1)
+Repository: https://github.com/victory113/safemed
+Branch: feature/login-registration
+Task: #9 - Build login and registration pages
+
+SESSION SUMMARY
+- Started Docker Desktop and SafeMed's backend, PostgreSQL, and Redis.
+- Opened the SafeMed project in Visual Studio Code.
+- Pulled main from 566a1c8 to 63f9669 before implementing the feature.
+- Confirmed Pacifique's open assignments: #9 (account pages) and #12 (API client).
+- Created a separate feature branch; no feature commits were made to main.
+- Built the design after the user's approval, then received approval to push.
+
+DESIGN AND BEHAVIOR
+- Calm blue, white, and pale gray using the existing SafeMed design tokens.
+- Simple mobile layout; centered card on desktop.
+- Login: email, password, Show/Hide control, validation, registration link.
+- Registration: full name, email, password, patient/caregiver choice, login link.
+- Readable text, visible labels, autocomplete hints, large controls, focus styles.
+- Invalid submissions focus the first field with an error.
+- Valid submissions show a truthful demo message; they do not create accounts
+  or log anyone in. No credentials are stored or sent to a server.
+- Subtle page and button animations with reduced-motion support.
+- SafeMed welcome fades in and out in 1.4 seconds, once per tab session.
+- The hidden form is inert during the welcome so it cannot receive keyboard focus.
+- Reduced-motion users skip the welcome. Storage failures do not prevent access.
+- Existing shared UI components and colors were reused without changing them.
+- The style guide remains available at /styleguide; unknown routes show a fallback.
+
+CODE WALKTHROUGH (READ IN THIS ORDER)
+1. frontend/src/App.tsx
+   Wraps the route content in Welcome, which handles the initial introduction.
+2. frontend/src/routes.tsx
+   Maps / and /login to Login, /register to Register, and /styleguide to StyleGuide.
+   Uses ordinary browser links; no router dependency was added.
+3. frontend/src/pages/Login.tsx and Register.tsx
+   Thin wrappers that select the mode of the shared AuthPage component.
+4. frontend/src/pages/AuthPage.tsx
+   Holds password visibility, validation errors, and demo submission state.
+   FormData reads submitted inputs. validateAuth checks them. Invalid forms focus
+   their first error; valid forms show a demo response. Shared Input and Button
+   components provide consistent labels, styles, and native control behavior.
+   Registration alone includes full name and Patient/Caregiver radio options.
+5. frontend/src/pages/auth-validation.ts
+   Pure validation rules: required name on registration, valid email, required
+   password, and an eight-character password minimum on registration only.
+   Passwords are not trimmed. Backend validation will still be necessary.
+6. frontend/src/pages/auth.css
+   Account layouts, existing color tokens, mobile breakpoint, and animations.
+7. frontend/src/pages/Welcome.tsx and welcome.css
+   Session flag, reduced-motion detection, 1.4-second timer, cleanup, and overlay.
+   To replay the introduction, open a fresh tab session or clear the browser's
+   sessionStorage key named safemed-welcome-seen, then reload.
+8. frontend/tests/auth-validation.test.mjs
+   Five tests: empty registration; invalid name/email/short password; valid
+   registration; login without signup-only restrictions; missing login password.
+9. frontend/index.html
+   SafeMed browser title and page description.
+
+LOCAL PREVIEW
+Login:        http://localhost:5173/login
+Registration: http://localhost:5173/register
+Style guide:  http://localhost:5173/styleguide
+API docs:     http://localhost:8000/docs
+Health:       http://localhost:8000/health
+
+RUNNING AND CHECKING
+Node/npm was unavailable on the host, so the frontend runs in a Node 24 Docker
+container named safemed-frontend. No system Node installation was made.
+Backend startup: docker compose up -d --build
+Frontend startup (from any directory, when no container of that name is running):
+  docker run --rm --name safemed-frontend -p 5173:5173 -v /Users/pacifiquemugisha/dev/safemed/frontend:/app -w /app node:24-alpine sh -c 'npm ci && npm run dev -- --host 0.0.0.0'
+Validation tests: docker exec safemed-frontend node --test tests/auth-validation.test.mjs
+Production build: docker exec safemed-frontend npm run build
+
+VERIFICATION AND LIMITATIONS
+- Five validation tests pass; TypeScript and production build pass.
+- Login and registration URLs return HTTP 200.
+- Backend health reports the database connected.
+- User reviewed and approved the design, including the added welcome animation.
+- Automated visual and keyboard interaction checks were unavailable because the
+  browser automation connection failed. Manual keyboard/mobile checks remain.
+- npm ci reported 10 moderate dependency advisories in the existing dependency
+  tree. No dependency upgrades were made as part of this UI task.
+- Form validation tests do not exercise browser interactions or the welcome timer.
+
+ISSUE #9 STATUS
+Implementation complete and approved by the user for pushing to the feature
+branch. A pull request will be opened for teammate review. Not merged and not
+marked done: final browser checks, teammate approval, and merge remain.
+Authentication intentionally remains a placeholder per the issue requirements.
+No backend source files, dependency manifests, or shared UI components changed.
+Shared App.tsx was changed to connect the new routes and welcome screen.
+
+ISSUE #12 - READY TO START AS A SEPARATE TASK
+Requirements: typed fetch wrapper, environment base URL, bearer token attachment,
+401 handling, usable network/server errors, and API response types.
+We can implement against docs/API_CONTRACT.md with mocked network tests now.
+The current local backend exposes root and health only; live auth integration
+must wait for the auth endpoints to land.
+From Chima: confirm auth request/response shapes match the contract, token
+lifetime/storage expectations, and how login failures versus expired-session
+401s should be handled. Login 401s should show an error without a redirect loop.
+From Victory: confirm medication/dose response types match the contract when
+those endpoints are ready. No need to wait to build the client foundation.
+Default development API origin can be http://localhost:8000; confirm the eventual
+production origin before deployment. Development CORS already permits port 5173.
+No passwords, access tokens, or real patient data are needed from anyone.
