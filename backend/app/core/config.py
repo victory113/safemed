@@ -18,6 +18,13 @@ class Settings(BaseSettings):
 
     ENVIRONMENT: str = "development"
 
+    # Secret used to sign login tokens (JWTs). No default on purpose: if it
+    # is missing the app refuses to start instead of running with a weak key.
+    SECRET_KEY: str
+
+    # How long a login token stays valid, in seconds (the API contract says 3600).
+    ACCESS_TOKEN_EXPIRE_SECONDS: int = 3600
+
     PROJECT_NAME: str = "SafeMed"
     API_V1_PREFIX: str = "/api/v1"
 
