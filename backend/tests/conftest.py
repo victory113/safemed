@@ -33,6 +33,11 @@ def engine():
     admin.dispose()
 
     eng = create_engine(TEST_DATABASE_URL)
+    # Rebuild from scratch every run. create_all() alone does NOT alter an
+    # existing table, so after a model change the test database would quietly
+    # keep the old columns and every test would fail with "column does not
+    # exist". Dropping first guarantees the schema always matches the models.
+    Base.metadata.drop_all(eng)
     Base.metadata.create_all(eng)
     yield eng
     eng.dispose()

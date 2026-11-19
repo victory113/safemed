@@ -6,6 +6,7 @@ them all in one place guarantees both.
 """
 from app.models.audit import AuditEvent
 from app.models.dose import DoseEvent
+from app.models.interaction import DrugInteraction
 from app.models.medication import DoseSchedule, Medication
 from app.models.notification import Notification
 from app.models.safety import SafetyFinding, finding_medications
@@ -16,6 +17,7 @@ __all__ = [
     "ConsentGrant",
     "DoseEvent",
     "DoseSchedule",
+    "DrugInteraction",
     "Medication",
     "Notification",
     "SafetyFinding",
