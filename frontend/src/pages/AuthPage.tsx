@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
+import { registerAccount, signIn } from '../api/auth';
 import { Button, Input } from '../components';
 import './auth.css';
 import { validateAuth } from './auth-validation';
@@ -7,22 +8,53 @@ import type { AuthField } from './auth-validation';
 
 /** Shared layout keeps login and registration consistent; wrappers choose the mode. */
 export function AuthPage({ register = false }: { register?: boolean }) {
-  // These states affect presentation only. Credentials are never stored or sent.
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<AuthField, string>>>({});
-  const [submitted, setSubmitted] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [notice, setNotice] = useState<{ message: string; error?: boolean } | null>(null);
+  const submitting = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
-  // Keep the user on the page and validate before showing the demo response.
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitting.current) return;
     const data = new FormData(event.currentTarget);
     const next = validateAuth(data, register);
     setErrors(next);
-    setSubmitted(false);
+    setNotice(null);
     // Focus the first invalid field so keyboard and screen-reader users can fix it.
     const first = Object.keys(next)[0];
-    if (first) formRef.current?.querySelector<HTMLInputElement>(`[name="${first}"]`)?.focus();
-    else setSubmitted(true);
+    if (first) {
+      formRef.current?.querySelector<HTMLInputElement>(`[name="${first}"]`)?.focus();
+      return;
+    }
+
+    submitting.current = true;
+    setPending(true);
+    const credentials = {
+      email: String(data.get('email')).trim(),
+      password: String(data.get('password')),
+    };
+    try {
+      if (register) {
+        await registerAccount({
+          ...credentials,
+          full_name: String(data.get('full_name')).trim(),
+          role: data.get('role') === 'CAREGIVER' ? 'CAREGIVER' : 'PATIENT',
+        });
+        setNotice({ message: 'Account created. You can now log in.' });
+      } else {
+        const user = await signIn(credentials);
+        setNotice({ message: `You’re signed in, ${user.full_name}.` });
+      }
+      formRef.current?.reset();
+      setShowPassword(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Please try again.';
+      setNotice({ error: true, message });
+    } finally {
+      submitting.current = false;
+      setPending(false);
+    }
   }
   return (
     <div className="auth-shell">
@@ -43,7 +75,7 @@ export function AuthPage({ register = false }: { register?: boolean }) {
             <a href="/register" aria-current={register ? 'page' : undefined}>Create account</a>
           </nav>
           {/* noValidate lets us display consistent, field-specific messages. */}
-          <form id="auth-form" ref={formRef} onSubmit={submit} onChange={() => setSubmitted(false)} noValidate>
+          <form id="auth-form" ref={formRef} onSubmit={submit} onChange={() => setNotice(null)} aria-busy={pending} noValidate>
             {register && <Input label="Full name" name="full_name" autoComplete="name" required error={errors.full_name} placeholder="Your full name" />}
             <Input label="Email address" name="email" type="email" autoComplete="email" autoCapitalize="none" spellCheck={false} required error={errors.email} placeholder="you@example.com" />
             {/* A separate type="button" prevents Show/Hide from submitting the form. */}
@@ -52,9 +84,13 @@ export function AuthPage({ register = false }: { register?: boolean }) {
               <button className="auth-show" type="button" aria-controls="auth-password" aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}>{showPassword ? 'Hide' : 'Show'}</button>
             </div>
             {register && <fieldset className="auth-role"><legend>I’m here as a</legend><div><label><input type="radio" name="role" value="PATIENT" defaultChecked /> Patient</label><label><input type="radio" name="role" value="CAREGIVER" /> Caregiver</label></div></fieldset>}
-            <Button type="submit" size="lg" fullWidth>{register ? 'Create account' : 'Log in'}<span aria-hidden="true"> →</span></Button>
-            {/* Replace this demo state with the API result when auth is integrated. */}
-            {submitted && <p className="auth-feedback" role="status">{register ? 'Your form is ready. This preview does not create an account yet.' : 'Your form is ready. This preview does not sign you in yet.'}</p>}
+            <Button type="submit" size="lg" fullWidth disabled={pending}>
+              {register ? (pending ? 'Creating account…' : 'Create account') : (pending ? 'Signing in…' : 'Log in')}
+              <span aria-hidden="true"> →</span>
+            </Button>
+            {notice && (
+              <p className="auth-feedback" role={notice.error ? 'alert' : 'status'}>{notice.message}</p>
+            )}
           </form>
           <p className="auth-switch">{register ? 'Already have an account?' : 'New to SafeMed?'} <a href={register ? '/login' : '/register'}>{register ? 'Log in' : 'Create an account'}</a></p>
         </section>
