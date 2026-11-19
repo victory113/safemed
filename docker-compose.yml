@@ -42,6 +42,7 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       ENVIRONMENT: ${ENVIRONMENT}
+      SECRET_KEY: ${SECRET_KEY}
     ports:
       - "8000:8000"
     volumes:
