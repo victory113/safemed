@@ -57,5 +57,11 @@ class DoseEvent(TimestampMixin, Base):
 
     medication: Mapped["Medication"] = relationship()
 
+    # The schedule this dose came from. resolve_status() needs its
+    # grace_minutes to decide when an unconfirmed dose becomes MISSED.
+    # Nullable because a schedule can be deleted while its past doses remain -
+    # history is never destroyed just because the plan changed.
+    schedule: Mapped["DoseSchedule | None"] = relationship()
+
     def __repr__(self) -> str:
         return f"<DoseEvent {self.scheduled_for} {self.status.value}>"

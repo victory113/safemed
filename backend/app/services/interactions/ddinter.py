@@ -120,6 +120,8 @@ class DDInterSource:
                     drug_b_key=row.drug_b_key,
                     drug_a_name=row.drug_a_name,
                     drug_b_name=row.drug_b_name,
+                    drug_a_rxcui=row.drug_a_rxcui,
+                    drug_b_rxcui=row.drug_b_rxcui,
                     level=row.level,
                     severity=severity,
                     source_name=self.name,

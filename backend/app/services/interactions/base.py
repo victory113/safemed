@@ -28,6 +28,11 @@ class InteractionHit:
     drug_b_key: str
     drug_a_name: str
     drug_b_name: str
+    # RxNorm ids where known. The source names a drug its own way
+    # ("Acetylsalicylic acid"); the patient entered "aspirin". The id is the
+    # only reliable way to link a hit back to the patient's own record.
+    drug_a_rxcui: str | None
+    drug_b_rxcui: str | None
     level: str                 # the source's own wording
     severity: Severity         # mapped to our scale
     source_name: str

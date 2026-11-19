@@ -26,7 +26,7 @@ def get_event(db: Session, *, patient_id: UUID, dose_id: UUID) -> DoseEvent | No
     stmt = (
         select(DoseEvent)
         .where(DoseEvent.id == dose_id, DoseEvent.patient_id == patient_id)
-        .options(joinedload(DoseEvent.medication))
+        .options(joinedload(DoseEvent.medication), joinedload(DoseEvent.schedule))
     )
     return db.execute(stmt).scalar_one_or_none()
 
@@ -42,7 +42,7 @@ def events_between(
             DoseEvent.scheduled_for >= start,
             DoseEvent.scheduled_for < end,
         )
-        .options(joinedload(DoseEvent.medication))
+        .options(joinedload(DoseEvent.medication), joinedload(DoseEvent.schedule))
         .order_by(DoseEvent.scheduled_for.asc())
     )
     return list(db.execute(stmt).scalars().all())

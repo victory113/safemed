@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
-from app.api.v1 import auth
+from app.api.v1 import auth, doses, findings, medications
 
 app = FastAPI(
     title=f"{settings.PROJECT_NAME} API",
@@ -30,6 +30,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
+app.include_router(medications.router, prefix=settings.API_V1_PREFIX)
+app.include_router(doses.router, prefix=settings.API_V1_PREFIX)
+app.include_router(findings.router, prefix=settings.API_V1_PREFIX)
 
 @app.get("/health", tags=["system"])
 def health(db: Session = Depends(get_db)) -> dict:

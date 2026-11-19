@@ -98,15 +98,22 @@ def test_weekly_with_no_days_is_treated_as_daily(db, patient, medication):
 # -------------------------------------------------------- state machine ----
 
 def _event(schedule, scheduled_for, status=DoseStatus.SCHEDULED):
-    event = DoseEvent(
+    """Build a DoseEvent wired to its schedule through the real relationship.
+
+    An earlier version of this helper assigned `event.schedule = schedule` as a
+    plain attribute, which Python allowed even though the model had no such
+    relationship. The tests passed and the live endpoint crashed with
+    AttributeError. Lesson: a fixture that invents structure the model does not
+    have is testing the fixture, not the code.
+    """
+    return DoseEvent(
         medication_id=schedule.medication_id,
         schedule_id=schedule.id,
         patient_id=schedule.medication.patient_id,
         scheduled_for=scheduled_for,
         status=status,
+        schedule=schedule,
     )
-    event.schedule = schedule
-    return event
 
 
 def test_future_dose_is_scheduled(db, daily_schedule):
