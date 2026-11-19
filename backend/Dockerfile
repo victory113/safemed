@@ -9,9 +9,9 @@ WORKDIR /app
 
 # Install dependencies FIRST, as their own layer. Docker caches this layer, so
 # editing application code does not reinstall packages on every rebuild.
-COPY requirements.txt .
+COPY requirements.txt requirements-dev.txt ./
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt
 
 # Then copy the application code.
 COPY . .

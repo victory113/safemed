@@ -1,0 +1,4 @@
+# Test and development tooling. Installed in the image alongside
+# requirements.txt so tests can run inside the container.
+pytest>=8.3
+pytest-cov>=6.0
