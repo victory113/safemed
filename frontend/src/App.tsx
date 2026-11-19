@@ -1,12 +1,9 @@
-import { StyleGuide } from "./pages/StyleGuide";
+import { Routes } from './routes';
+import { Welcome } from './pages/Welcome';
 
-/**
- * Temporary: the app renders the style guide so the team can see the design
- * system. Once routing lands, this becomes the router and the style guide
- * moves to /styleguide.
- */
+// The welcome screen wraps all routes and plays once per browser-tab session.
 function App() {
-  return <StyleGuide />;
+  return <Welcome><Routes /></Welcome>;
 }
 
 export default App;

@@ -1,0 +1,15 @@
+/* Intro timeline: 650ms fade in, pause until 1050ms, then 350ms fade out.
+ * Welcome.tsx removes the overlay at 1400ms and unlocks the form. */
+.welcome { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; background: var(--color-background); animation: welcome-away 350ms ease-in 1050ms both; }
+.welcome-brand { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-2xl); font-weight: var(--weight-bold); letter-spacing: -.04em; animation: welcome-in 650ms ease-out both; }
+.welcome-brand svg { width: var(--space-12); height: var(--space-12); color: var(--color-primary); }
+.welcome-dot { color: var(--color-primary); }
+.welcome-content { opacity: 1; transition: opacity 350ms ease; }
+.welcome-content--waiting { opacity: 0; }
+@keyframes welcome-in { from { opacity: 0; transform: translateY(var(--space-2)); } to { opacity: 1; transform: translateY(0); } }
+@keyframes welcome-away { from { opacity: 1; } to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .welcome { display: none; animation: none; }
+  .welcome-brand { animation: none; }
+  .welcome-content { opacity: 1; transition: none; }
+}
