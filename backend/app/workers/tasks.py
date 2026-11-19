@@ -14,6 +14,7 @@ from app.models.enums import DoseStatus, MedicationStatus, Severity
 from app.models.medication import Medication
 from app.models.user import User
 from app.services import dose_scheduler
+from app.services.explain_findings import explain_pending
 from app.services.recall_monitor import RecallMonitor
 from app.services.safety_engine import SafetyEngine
 from app.workers.celery_app import celery_app
@@ -116,3 +117,17 @@ def evaluate_all_patients() -> dict:
         db.commit()
 
     return {"patients": len(patient_ids), "findings_created": created_total}
+
+
+@celery_app.task(name="app.workers.tasks.explain_findings")
+def explain_findings(limit: int = 25) -> dict:
+    """Attach plain-language explanations to findings that lack one.
+
+    Runs after the engine, never before. Every response is validated before
+    storage, so a model that strays into advice simply leaves the finding
+    with its original wording.
+    """
+    with SessionLocal() as db:
+        summary = explain_pending(db, limit=limit)
+        db.commit()
+    return summary

@@ -40,6 +40,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.workers.tasks.check_recalls",
         "schedule": crontab(minute=0),          # top of every hour
     },
+    "explain-findings": {
+        "task": "app.workers.tasks.explain_findings",
+        "schedule": crontab(minute="*/10"),
+    },
     "refresh-dose-statuses": {
         "task": "app.workers.tasks.refresh_dose_statuses",
         "schedule": crontab(minute="*/15"),     # every 15 minutes

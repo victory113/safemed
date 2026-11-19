@@ -42,6 +42,7 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       ENVIRONMENT: ${ENVIRONMENT}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       SECRET_KEY: ${SECRET_KEY}
     ports:
       - "8000:8000"
@@ -62,6 +63,7 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       ENVIRONMENT: ${ENVIRONMENT}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       SECRET_KEY: ${SECRET_KEY}
     volumes:
       - ./backend:/app
@@ -80,6 +82,7 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       ENVIRONMENT: ${ENVIRONMENT}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       SECRET_KEY: ${SECRET_KEY}
     volumes:
       - ./backend:/app

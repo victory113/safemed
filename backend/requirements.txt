@@ -18,3 +18,6 @@ pwdlib[argon2]>=0.2
 email-validator>=2.2
 # Background worker
 celery[redis]>=5.4
+
+# AI explanation layer (optional - the app runs without a key)
+anthropic>=1.0
