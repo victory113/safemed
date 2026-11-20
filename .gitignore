@@ -23,3 +23,9 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Celery Beat runtime state. Beat rewrites this file constantly, so tracking
+# it means a conflict on every pull. It is regenerated automatically.
+backend/celerybeat-schedule
+backend/celerybeat-schedule.*
+backend/celerybeat.pid

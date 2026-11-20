@@ -1,0 +1,575 @@
+/* Dashboard layout.
+ *
+ * Every colour, space and size here comes from a token in styles/tokens.css.
+ * Nothing is hard-coded, so the whole app shifts together when a token
+ * changes - and the accessibility work baked into those tokens (18px base
+ * text, AA contrast, 44px touch targets) is inherited rather than re-decided
+ * on this screen.
+ */
+
+.dash {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-background);
+}
+
+.dash-skip:focus {
+  position: fixed;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 10;
+  width: auto;
+  height: auto;
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+}
+
+/* ---- header ---- */
+
+.dash-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.dash-header__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-lg);
+  color: var(--color-text);
+}
+
+.dash-header__mark {
+  display: inline-flex;
+  width: 1.75rem;
+  height: 1.75rem;
+  color: var(--color-primary);
+}
+
+.dash-header__mark svg {
+  width: 100%;
+  height: 100%;
+}
+
+.dash-header__account {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.dash-header__who {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: var(--text-sm);
+  line-height: var(--leading-tight);
+  color: var(--color-text);
+}
+
+.dash-header__role {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.dash-header__out {
+  min-height: var(--control-height);
+  padding: 0 var(--space-4);
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  background: transparent;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.dash-header__out:hover {
+  background: var(--color-background);
+}
+
+.dash-header__out:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+
+/* ---- page body ---- */
+
+.dash-main {
+  flex: 1;
+  width: 100%;
+  max-width: 76rem;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-6);
+}
+
+.dash-greeting h1 {
+  margin: 0;
+  font-size: var(--text-2xl);
+  line-height: var(--leading-tight);
+  color: var(--color-text);
+}
+
+.dash-greeting p {
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-muted);
+}
+
+.dash-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: var(--space-6);
+  margin-top: var(--space-6);
+  align-items: start;
+}
+
+.dash-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.dash-loading,
+.dash-empty {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.dash-loading {
+  margin-top: var(--space-6);
+}
+
+.dash-error {
+  margin-top: var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-severe-bg);
+  border: 1px solid var(--color-severe);
+  border-radius: var(--radius-md);
+}
+
+.dash-error__title {
+  margin: 0 0 var(--space-1);
+  font-weight: var(--weight-semibold);
+}
+
+.dash-error p {
+  margin: 0 0 var(--space-3);
+}
+
+.dash-error button {
+  min-height: var(--control-height);
+  padding: 0 var(--space-4);
+  font: inherit;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.dash-inline-error {
+  margin: 0 0 var(--space-3);
+  color: var(--color-severe);
+  font-size: var(--text-sm);
+}
+
+/* ---- today's doses ---- */
+
+.dose-list,
+.med-list,
+.finding-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dose-row {
+  display: grid;
+  grid-template-columns: 9rem minmax(0, 1fr) auto;
+  gap: var(--space-4);
+  align-items: center;
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.dose-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+/* A left edge marks the two states that need attention. Colour is never the
+   only signal - the badge beside it states the status in words. */
+.dose-row--due {
+  box-shadow: inset 3px 0 0 var(--color-moderate);
+  padding-left: var(--space-4);
+}
+
+.dose-row--missed {
+  box-shadow: inset 3px 0 0 var(--color-severe);
+  padding-left: var(--space-4);
+}
+
+.dose-row__when {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-items: flex-start;
+}
+
+.dose-row__time {
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.dose-row__what {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.dose-row__name {
+  font-weight: var(--weight-medium);
+}
+
+.dose-row__dose,
+.med-row__dose {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.dose-row__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.dose-row__done {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+/* ---- findings ---- */
+
+.finding--severe {
+  margin-bottom: var(--space-4);
+}
+
+.finding__detail {
+  margin: 0 0 var(--space-3);
+}
+
+/* The AI rewrite is visually set apart from the deterministic text above it,
+   so it is always clear which words came from the safety data and which were
+   generated. */
+.finding__ai {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border-left: 3px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+}
+
+.finding__ai p {
+  margin: 0;
+}
+
+.finding__ai-label {
+  margin: 0 0 var(--space-1) !important;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.finding__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.finding-group {
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border);
+}
+
+.finding-group__title {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+}
+
+.finding-group__count {
+  color: var(--color-text-muted);
+  font-weight: var(--weight-normal);
+}
+
+.finding-group__note {
+  margin: var(--space-1) 0 var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.finding--quiet {
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.finding--quiet:last-child {
+  border-bottom: 0;
+}
+
+.finding__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.finding__title {
+  font-weight: var(--weight-medium);
+}
+
+.finding-archive {
+  margin-top: var(--space-5);
+  font-size: var(--text-sm);
+}
+
+.finding-archive summary {
+  cursor: pointer;
+  color: var(--color-text-muted);
+  min-height: var(--control-height);
+  display: flex;
+  align-items: center;
+}
+
+.finding--read {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-2) 0;
+  color: var(--color-text-muted);
+}
+
+.finding-disclaimer {
+  margin: var(--space-6) 0 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+/* ---- adherence ---- */
+
+.adherence__figure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-3);
+}
+
+.adherence__value {
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.adherence__caption {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.adherence__bar {
+  height: 0.5rem;
+  background: var(--color-border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.adherence__bar span {
+  display: block;
+  height: 100%;
+  background: var(--color-success);
+}
+
+.adherence__bar[data-level="fair"] span {
+  background: var(--color-moderate);
+}
+
+.adherence__bar[data-level="low"] span {
+  background: var(--color-severe);
+}
+
+.adherence__counts {
+  display: flex;
+  gap: var(--space-6);
+  margin: var(--space-4) 0 0;
+}
+
+.adherence__counts dt {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.adherence__counts dd {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.adherence__note {
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+/* ---- medications ---- */
+
+.med-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.med-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.med-row__main {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+
+.med-row__name {
+  font-weight: var(--weight-medium);
+}
+
+.med-row__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.med-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  padding: var(--space-4);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.med-form__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.med-form__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* ---- footer ---- */
+
+.dash-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  justify-content: space-between;
+  padding: var(--space-5) var(--space-6);
+  margin-top: var(--space-10);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+/* ---- narrow screens ----
+ *
+ * One column, and the dose row stacks so the time, the medication and the
+ * buttons each get full width. The buttons stay at their full token height
+ * rather than shrinking, because this is the control an older patient taps
+ * every day on a phone.
+ */
+@media (max-width: 60rem) {
+  .dash-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 40rem) {
+  .dash-main {
+    padding: var(--space-5) var(--space-4);
+  }
+
+  .dash-header {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .dose-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+
+  .dose-row__when {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .dose-row__actions {
+    margin-top: var(--space-2);
+  }
+
+  .dose-row__actions button {
+    flex: 1;
+  }
+
+  .med-form__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Card header actions.
+ *
+ * The shared card header is a single flex row. In the narrow side column that
+ * squeezes the "Add a medication" button until its label wraps mid-phrase,
+ * which reads as broken. Letting the header wrap puts the button on its own
+ * line instead, and nowrap keeps the label itself intact. Scoped to .dash so
+ * the shared component is unchanged for every other page. */
+.dash .sm-card__header {
+  flex-wrap: wrap;
+}
+
+.dash .sm-card__header .sm-button {
+  white-space: nowrap;
+}
+
+/* A caregiver whose access has been removed. Kept in the list rather than
+ * deleted - the record of who could see what, and until when, is part of
+ * what makes consent meaningful to the person who gave it. */
+.med-row--past {
+  opacity: 0.65;
+}

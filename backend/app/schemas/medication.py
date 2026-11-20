@@ -12,10 +12,10 @@ fields a client is not allowed to set (nobody should be able to POST their own
 
 Shapes here match docs/API_CONTRACT.md section 2. Change one, change both.
 """
-from datetime import date, datetime
+from datetime import date, datetime, time
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.enums import MedicationStatus
 
@@ -34,6 +34,45 @@ class MedicationCreate(BaseModel):
     ndc: str | None = Field(default=None, max_length=20)
     notes: str | None = Field(default=None, max_length=1000)
     started_on: date | None = None
+
+    # Scheduling belongs to adding a medication, not to a separate second
+    # step. A medication recorded without times has nothing to log against, so
+    # the patient's daily check-in would simply be empty - and the feature
+    # would look broken rather than unconfigured.
+    times: list[time] = Field(
+        default_factory=list,
+        max_length=12,
+        description=(
+            'Times of day this is taken, e.g. ["08:00", "20:00"]. Each one '
+            "becomes a dose schedule. Duplicates are ignored."
+        ),
+    )
+    grace_minutes: int = Field(
+        default=120,
+        ge=0,
+        le=1440,
+        description=(
+            "How long after a scheduled time an unconfirmed dose may remain "
+            "before it counts as missed. Applies to every time above."
+        ),
+    )
+
+    @field_validator("times")
+    @classmethod
+    def drop_duplicate_times(cls, value: list[time]) -> list[time]:
+        """Two schedules at the same time would generate two doses for one
+        pill, and the patient would be asked to confirm the same thing twice.
+
+        Order is preserved rather than sorted, so the response reflects what
+        the client sent.
+        """
+        seen: set[time] = set()
+        unique: list[time] = []
+        for at in value:
+            if at not in seen:
+                seen.add(at)
+                unique.append(at)
+        return unique
 
 
 class MedicationUpdate(BaseModel):

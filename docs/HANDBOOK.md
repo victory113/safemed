@@ -413,7 +413,773 @@ Understanding comes from poking at it:
 | `/docs` | Auto-generated, interactive |
 | Repository | Public on GitHub, `.env` excluded |
 
-**Next:** the data model — patients, caregivers, consent grants, medications, dose events, safety findings, notifications, and the audit log — plus Alembic migrations so three developers can keep their databases identical.
+**Next:** the data model, and the decision that makes dose tracking possible at all.
+
+---
+
+## Chapter 4 — The Data Model
+
+### 4.1 What a data model actually decides
+
+A data model is usually described as "the tables". That undersells it. The model decides **which questions the system can answer at all**.
+
+The clearest example in SafeMed is dose logging. There are two obvious designs:
+
+| Design | What you store |
+|---|---|
+| A | A row each time the patient says "I took it" |
+| B | A row for every dose the patient is *expected* to take, created in advance, then updated |
+
+Design A is simpler and smaller. It is also incapable of the one thing SafeMed is for. If you only store confirmations, a missed dose is an *absence of data* — and you cannot count, detect, or alert on an absence. "Maria missed her evening warfarin" is not a row that exists; it is a row that doesn't.
+
+Design B turns a missed dose into an observable fact. That is why `dose_events` is generated ahead of time, and why the whole adherence feature is possible.
+
+> **The lesson worth taking:** when you cannot work out how to query something, the problem is usually the model, not the query.
+
+### 4.2 The nine tables
+
+| Table | Holds | The interesting part |
+|---|---|---|
+| `users` | patients, caregivers, admins | One table, a `role` column — not three tables |
+| `consent_grants` | who may see whom | *This table is the authorisation rule* |
+| `medications` | what a patient takes | Keeps both what they typed and what we matched |
+| `dose_schedules` | "08:00 every day" | The template |
+| `dose_events` | "the 08:00 dose on 19 Nov" | The instance, generated from the template |
+| `safety_findings` | one concern we detected | Carries its own provenance |
+| `finding_medications` | which meds a finding involves | A join table — a finding can involve two |
+| `notifications` | what we sent, to whom | Separate from the finding itself |
+| `audit_events` | who looked at what | Currently defined but unwritten — see 4.9 |
+
+### 4.3 Why `consent_grants` is the most important table
+
+Most apps answer "may this person see this?" with code — an `if` statement somewhere in a view. SafeMed answers it with a row.
+
+```python
+class ConsentGrant(TimestampMixin, Base):
+    __tablename__ = "consent_grants"
+    __table_args__ = (
+        UniqueConstraint("patient_id", "caregiver_id",
+                         name="uq_consent_patient_caregiver"),
+    )
+    status: Mapped[ConsentStatus]     # PENDING | ACTIVE | REVOKED
+    granted_at: Mapped[datetime | None]
+    revoked_at: Mapped[datetime | None]
+```
+
+Three consequences follow, and all three are things a marker will notice:
+
+1. **Revoking is instant.** The grant is looked up on every request, so consent withdrawn at 10:00 takes effect at 10:00 — not whenever a cached token expires.
+2. **Revoking does not delete.** The status changes and `revoked_at` is stamped. We never destroy the record of who had access and when. In a health context, that history *is* the accountability.
+3. **The unique constraint makes re-inviting safe.** One pair, one row. Invite → revoke → invite again reuses the same row and sets it back to `PENDING`, so the history stays in one place instead of accumulating duplicates.
+
+### 4.4 The template/instance split
+
+```
+DoseSchedule          "Metformin, 08:00, daily, 120 minutes grace"
+      │
+      │ generated for each day
+      ▼
+DoseEvent             "Metformin, 2026-11-19 08:00Z, status=TAKEN"
+```
+
+Separating these is what lets a patient change their schedule without rewriting history. Change the schedule to 09:00 and yesterday's 08:00 dose still says 08:00, because it was recorded as a fact rather than derived from the current template.
+
+It is also why removing a time **deactivates** the schedule rather than deleting it:
+
+```python
+schedule.is_active = False
+```
+
+Deleting the row would orphan every dose already logged against it.
+
+### 4.5 Keeping what the patient typed
+
+```python
+name_entered: Mapped[str]              # "aspirin"
+normalized_name: Mapped[str | None]    # "aspirin" (from RxNorm)
+rxcui: Mapped[str | None]              # "1191"
+```
+
+Three columns for what looks like one piece of information. The reason: `name_entered` is what the patient actually said, and we must never overwrite it. If RxNorm matches the wrong drug, the original is still there to correct from. If RxNorm is down, the medication still saves with `rxcui = NULL` and is checked by name instead.
+
+A nullable column here is not sloppiness. It is an honest record that this particular medication is understood less well than the others — which is why the dashboard shows "Checked by name only" rather than hiding it.
+
+### 4.6 Migrations: why not just `create_all()`
+
+SQLAlchemy can build every table from the models in one call. For a solo project that works. For three developers it does not, because `create_all()` only *creates* — it never alters. Once a table exists, adding a column does nothing to it.
+
+Alembic generates a numbered, reviewable script per change:
+
+```bash
+docker compose exec api alembic revision --autogenerate -m "add dose events"
+docker compose exec api alembic upgrade head
+```
+
+Chima pulls, runs `upgrade head`, and his database matches yours exactly. Without this, "works on my machine" becomes the default state of the project.
+
+> **Autogenerate drafts, it does not decide.** Always read the generated script. It detects added and removed columns well; it cannot tell a rename from a drop-plus-add, and a drop destroys data.
+
+### 4.7 A bug this chapter exists to prevent
+
+The `/doses/today` endpoint returned HTTP 500:
+
+```
+'DoseEvent' object has no attribute 'schedule'
+```
+
+The model had a `schedule_id` column but no `schedule` **relationship**, so `event.schedule` did not exist.
+
+The genuinely alarming part: **every test passed.** The test fixture had done this:
+
+```python
+event.schedule = schedule        # a plain Python attribute
+```
+
+Python lets you attach any attribute to an object. The fixture invented a relationship the model did not have, and every test exercised the fixture's fiction rather than the real code.
+
+The fix was one line in the model:
+
+```python
+schedule: Mapped["DoseSchedule | None"] = relationship()
+```
+
+and a rewritten fixture that goes through the real relationship. The comment left in the test file is worth memorising:
+
+> *A fixture that invents structure the model does not have is testing the fixture, not the code.*
+
+### 4.8 Three details that look small
+
+**UUIDs, not auto-incrementing integers.** Sequential ids leak information — `/medications/41` tells you roughly how many medications exist in the system, and `/medications/42` is a reasonable guess at someone else's. UUIDs are also generated without asking the database, which matters for the background worker.
+
+**Timestamps are always timezone-aware UTC.** Mixing naive and aware datetimes is one of the most common sources of off-by-hours bugs. There is one helper and everything goes through it.
+
+**Every repository function takes `patient_id`.**
+
+```python
+def get(db, *, patient_id: UUID, medication_id: UUID) -> Medication | None:
+```
+
+Not a convention — a *required argument*. You cannot write a query that accidentally returns another patient's data, because the owner is something you must pass rather than something you must remember.
+
+### 4.9 What is still missing
+
+`audit_events` is defined and unused. Nothing writes to it. In a system where a caregiver can read someone else's medication record, the log of who looked at what is not optional — and it is the clearest remaining gap in the model.
+
+### 4.10 Try these yourself
+
+1. **Look at the tables.** `docker compose exec db psql -U safemed -d safemed`, then `\dt`, then `\d consent_grants`. Find the unique constraint.
+2. **Prove the template/instance split.** Find a `dose_schedules` row, then `SELECT * FROM dose_events WHERE schedule_id = '...';` — one template, many instances.
+3. **Try to break ownership.** Log in as one patient, note a medication id, log in as another, and `GET /medications/{that id}`. You get 404, not 403. Ask yourself why 404 is the safer answer.
+
+---
+
+## Chapter 5 — Making Drug Names Comparable, and the Safety Engine
+
+### 5.1 The bug that explains this chapter
+
+Warfarin and aspirin together is a textbook Major interaction — it is in every pharmacology course. We put both in the database, ran the engine, and got **zero findings**.
+
+Nothing was broken. The interaction dataset calls aspirin **"Acetylsalicylic acid"**. The patient typed "aspirin". String comparison said: different drugs.
+
+This is the entire problem of drug data in one example. The same substance has a brand name, a generic name, a chemical name, and a dozen spellings. Matching on text will fail, and — this is the dangerous part — **it fails silently**. No error, no warning, just a safety check that quietly finds nothing.
+
+### 5.2 RxNorm: an id instead of a name
+
+RxNorm is the US National Library of Medicine's drug vocabulary. Its job is to give every drug concept one stable identifier, the **RXCUI**.
+
+```
+"aspirin"               ─┐
+"Acetylsalicylic acid"  ─┼──► RXCUI 1191
+"ASA"                   ─┘
+
+"paracetamol"    ─┐
+"acetaminophen"  ─┴──────► RXCUI 161
+```
+
+Once both sides carry 1191, the comparison is `1191 == 1191`. Names stop mattering.
+
+### 5.3 Normalisation must never block saving
+
+```python
+medication = repo.create(db, patient_id=..., **fields)   # saved FIRST
+
+result = normalize_medication_name(medication.name_entered)
+if result.found:
+    repo.update(db, medication=medication,
+                rxcui=result.rxcui, normalized_name=result.normalized_name)
+```
+
+The order is deliberate. RxNorm is an external service over the internet. It can be slow, down, or return nonsense. **None of that is a reason to stop a patient recording a medication they are actually taking.**
+
+So `RxNormClient.normalize()` has an unusual rule: every failure returns "no match" rather than raising. A timeout, a 500, malformed JSON — all collapse to the same harmless outcome. The medication saves with `rxcui = NULL` and gets checked by name, which is weaker but far better than nothing.
+
+> Deciding *what a failure should degrade into* is a design decision, not an error-handling afterthought.
+
+### 5.4 Resolving the dataset, once
+
+Normalising the patient's side is only half of it. The dataset needed RXCUIs too, so we wrote `scripts/resolve_rxcuis.py` and ran it once:
+
+| | |
+|---|---|
+| Distinct drug names in DDInter | 1,914 |
+| Resolved to an RXCUI | **1,904 (99.5%)** |
+| Interaction rows with both RXCUIs | 159,906 of 160,235 |
+
+The 10 unresolved names still match by text, so nothing is lost — the fallback stays. And matching happens both ways:
+
+```python
+for rxcui, drug_key in ((hit.drug_a_rxcui, hit.drug_a_key),
+                        (hit.drug_b_rxcui, hit.drug_b_key)):
+    med = (index.get(rxcui) if rxcui else None) or index.get(drug_key)
+```
+
+**ID first, name as fallback.** Without the fallback, the ten unresolved drugs would silently stop being checked.
+
+### 5.5 Pluggable sources, and why the professor was right
+
+Your professor's warning was that an unavailable data source should not block the project. He was right in a way we only discovered later — the NLM's own Drug Interaction API was **retired in January 2024**, which is exactly the kind of thing that sinks a capstone in week nine.
+
+So the engine does not depend on DDInter. It depends on a shape:
+
+```python
+class InteractionSource(Protocol):
+    name: str
+    version: str
+    def find_interactions(self, drug_keys, rxcuis=None) -> list[InteractionHit]: ...
+```
+
+Any object with that shape works. The proof is in the tests, which pass a five-line fake:
+
+```python
+class FakeInteractionSource:
+    name, version = "FakeSource", "test-1"
+    def find_interactions(self, drug_keys, rxcuis=None):
+        return self._hits
+```
+
+That fake does two jobs at once: it makes the tests fast and independent of whether anyone has run the import, and it demonstrates that swapping the data source is genuinely a drop-in change.
+
+### 5.6 Stating uncertainty instead of hiding it
+
+DDInter rates interactions Major, Moderate, Minor — and sometimes Unknown. The tempting move is to map Unknown to Minor and move on. We map it to MILD *and record that the severity is not established*:
+
+```python
+assert "not established" in finding.detail.lower()
+assert finding.evidence["severity_established"] is False
+```
+
+The patient reads "The severity of this interaction is not established in the source data" rather than being quietly told it is minor. Presenting an unknown as a known is a way of being wrong that is very hard to detect later.
+
+### 5.7 Provenance: a finding that cannot be audited is just an assertion
+
+Every finding carries where it came from:
+
+```python
+finding.source_name      # "DDInter"
+finding.source_version   # "2.0"
+finding.evidence         # the raw record we based this on
+```
+
+When a pharmacist asks "where does this claim come from?", the answer is in the row. This is also what makes the AI layer safe to add later — the deterministic claim and its source exist *before* any model touches it.
+
+### 5.8 Deduplication: the feature that stops the alerts being useless
+
+The worker re-evaluates every patient on a timer. Without dedupe, the same aspirin/warfarin interaction would be reported every hour, for ever.
+
+```python
+def make_dedupe_key(patient_id, kind, *parts) -> str:
+    # SHA-256 of WHO and WHAT. Never WHEN.
+```
+
+Excluding time is the whole trick. A key built from "this patient + interaction + aspirin + warfarin" is identical on every run, so the second run finds the existing finding and creates nothing:
+
+```python
+first  = SafetyEngine(db, source).evaluate_patient(patient.id)
+second = SafetyEngine(db, source).evaluate_patient(patient.id)
+
+assert len(first.created) == 1
+assert len(second.created) == 0
+assert len(second.existing) == 1
+```
+
+Include a timestamp and every run produces a "new" concern, the patient is buried, and the entire safety feature becomes noise.
+
+### 5.9 Try these yourself
+
+1. **Reproduce the original bug.** `SELECT drug_a_key, drug_b_key FROM drug_interactions WHERE drug_a_key ILIKE '%acetylsalicylic%' LIMIT 5;` — the dataset's name for aspirin, in the raw.
+2. **Watch dedupe work.** On the dashboard press **Check again** twice. The findings do not multiply.
+3. **Break normalisation on purpose.** Add a medication called `zzzqqq`. It saves, and shows "Checked by name only".
+
+---
+
+## Chapter 6 — Recalls, False Alarms, and the Worker
+
+### 6.1 The number that shaped the design
+
+FDA recall notices do not reliably identify the product. We sampled 100 recent drug enforcement reports:
+
+| | |
+|---|---|
+| Carry an NDC (identifies the exact product *and* manufacturer) | 61 |
+| Carry no NDC at all | 39 |
+
+So for roughly four recalls in ten, the honest answer to "does this affect my patient?" is **we cannot tell**.
+
+You have three options. Two of them are bad:
+
+- **Alert on every name match.** Metformin is recalled; every metformin patient is told they are affected. Most are not — different manufacturer entirely. After the second false alarm, people stop reading.
+- **Alert only on exact matches.** No false alarms, and you silently miss 39% of recalls.
+- **Say which one you have.** This is what SafeMed does.
+
+### 6.2 Tiered matching
+
+| Tier | When | What the patient reads |
+|---|---|---|
+| `CONFIRMED` | The recall's NDC matches the patient's NDC | "This recall **affects your** Metformin" |
+| `POSSIBLE` | Same drug, manufacturer unknown | "This recall **may affect your** Metformin — check the label" |
+| no match | Different drug | nothing |
+
+Severity routing falls out of the tier:
+
+```python
+CONFIRMED + Class I  -> SEVERE
+CONFIRMED + other    -> MODERATE
+POSSIBLE  + Class I  -> MODERATE
+POSSIBLE  + other    -> MILD
+```
+
+A `POSSIBLE` match is never escalated to a caregiver as though it were certain. The difference between "affects" and "may affect — check the label" is the difference between a system people trust and one they mute.
+
+### 6.3 Refusing to guess
+
+NDC codes come in several formats, and some are genuinely ambiguous about where the product code ends. The first version of `ndc_product_code()` guessed. A test failed, and the right fix was not a cleverer guess:
+
+```python
+def test_ambiguous_ndc_is_refused_rather_than_guessed(): ...
+```
+
+The function now returns `None` for ambiguous input, which downgrades the match from CONFIRMED to POSSIBLE. **A guess here would mean telling someone a recall definitely affects their medication when we do not know that.** Degrading to "check the label" is the correct failure.
+
+Note the test name. It states the behaviour and its justification, so nobody later "fixes" the refusal back into a guess.
+
+### 6.4 The worker, and why scheduled work needs a different design
+
+Checking the FDA for recalls cannot happen inside a web request — nobody is on the page at 3 a.m. That needs **Celery** (runs jobs) and **Redis** (holds the queue).
+
+```python
+beat_schedule = {
+    "check-recalls":          {"task": "check_recalls",         "schedule": 3600},
+    "explain-findings":       {"task": "explain_findings",      "schedule": 600},
+    "refresh-dose-statuses":  {"task": "refresh_dose_statuses", "schedule": 900},
+}
+```
+
+Three processes, one codebase: `api` serves requests, `worker` runs jobs, `beat` puts jobs on the queue on a timer.
+
+**Everything a worker does must be idempotent** — safe to run twice. A worker can be killed mid-job and the job redelivered, so "ran twice" is a normal operating condition, not an edge case. Two mechanisms do the work:
+
+```python
+task_acks_late = True        # acknowledge after completing, not on receipt
+```
+
+and the dedupe key from 5.8, backed by a unique constraint in the database. The constraint is what makes it true — a comment saying "this should not happen twice" is a wish; a unique index is a guarantee.
+
+### 6.5 A real bug: counting rows that were not inserted
+
+The DDInter import reported:
+
+```
+Inserted -81 new rows
+```
+
+Negative rows. The cause: PostgreSQL returns `-1` from `cursor.rowcount` for batched `INSERT ... ON CONFLICT DO NOTHING`, and we were summing those. The fix was to stop asking the driver and count the table before and after.
+
+Small, silly, and worth keeping in mind: **a number that is obviously impossible is a gift.** It is a bug that cannot hide. The dangerous version of this bug would have reported a plausible wrong number.
+
+### 6.6 Severity routing, stated once
+
+This is the rule the whole project turns on:
+
+> Our demo data produces **ten findings from five ordinary medications.** Only the SEVERE ones reach a caregiver.
+
+Ten findings is not a bug in the data. Five common drugs really do have that many documented interactions, most of them minor. A caregiver sent all ten would be reading mostly noise, and within a week would stop reading any of them — including the one that mattered.
+
+So the caregiver endpoint filters to SEVERE **in the endpoint, not the interface**:
+
+```python
+.where(SafetyFinding.severity == Severity.SEVERE)
+```
+
+Put the filter in the UI and a second client, or a direct API call, hands someone all ten and reintroduces exactly the problem. Where a rule lives determines whether it is actually a rule.
+
+### 6.7 Try these yourself
+
+1. **Trigger a recall check by hand:**
+   ```bash
+   docker compose exec api python -c "from app.workers.tasks import simulate_recall; print(simulate_recall.delay('metformin').get(timeout=120))"
+   ```
+   Watch `docker compose logs -f worker` while it runs. The demo patient's Metformin carries Cardinal Health's NDC `0310-6225-30`, which matches real FDA recall D-0435-2021 — so you should see one CONFIRMED alongside several POSSIBLE.
+2. **Look at the queue.** `docker compose exec redis redis-cli LLEN celery` before and immediately after dispatching.
+3. **Run it twice.** The findings do not duplicate. That is 5.8 doing its job.
+
+---
+
+## Chapter 7 — The AI Layer, and the Line It Must Not Cross
+
+### 7.1 The question this project has to answer
+
+Early on you asked the right question about a different project idea: *"can't anyone just upload it to Claude and get the same answer?"* If yes, it is a prompt, not a system.
+
+SafeMed has to survive that question, and it does — but only because of where the AI sits.
+
+### 7.2 What AI is not allowed to do here
+
+**The model never decides whether something is dangerous.**
+
+That decision is made by the deterministic engine, from DDInter and FDA data, before any model is involved. By the time the AI layer runs, the finding already exists, is already severity-rated, already carries its source, and is already displayable.
+
+```
+DDInter / openFDA  ──►  deterministic engine  ──►  finding (complete)
+                                                        │
+                                                        ▼
+                                                  AI rewrites it
+                                                  in plain language
+```
+
+The AI's only job is translation: turning *"DDInter records a potential interaction between Acetylsalicylic acid and Warfarin, rated Major"* into something a 72-year-old can act on.
+
+This matters for a reason beyond safety. An LLM asked "is this combination dangerous?" will answer confidently every time, including when it is wrong, and you cannot tell the difference from the output. Asking it to rephrase a claim that already has a citation is a job it is genuinely good at.
+
+### 7.3 The three protections
+
+**1. The model never judges.** Severity comes from the dataset. The prompt asks for a rewrite, not an assessment.
+
+**2. No patient data is sent.** The model receives drug names and the source's description. Not the name, age, email, id, or medication list of any person. The privacy guarantee is structural — there is no payload to leak, so a logged prompt cannot expose a patient.
+
+**3. Every response is validated before it is stored.**
+
+```python
+FORBIDDEN_PATTERNS = [...]   # 11 regexes
+REQUIRED_PATTERN   = ...     # must refer the reader to a professional
+```
+
+The forbidden patterns catch the model telling someone to stop, change, or adjust a medication. The required pattern ensures it points them at a pharmacist or doctor. A response failing either check is **discarded, not shown**:
+
+```python
+ExplanationResult(text, status)   # ok | rejected | unavailable | disabled
+```
+
+### 7.4 Why `ai_explanation` is nullable, and why that is the important part
+
+```python
+ai_explanation: str | None
+```
+
+Four ways it ends up null: the AI is disabled, the API is unreachable, the response failed the guardrails, or the job has not run yet.
+
+In every one of those cases **the finding still stands and still displays**, because `detail` was written by the deterministic engine and never depended on the model. The frontend enforces this too — `detail` always renders; `ai_explanation` is shown as an addition, visually separated, under the heading "In plain language".
+
+The test states the rule directly:
+
+```python
+def test_ai_explanation_is_empty_until_the_ai_layer_runs(db, patient):
+    assert finding.ai_explanation is None
+    assert finding.detail                       # stands on its own
+    assert "pharmacist" in finding.detail.lower()
+```
+
+> **The design principle, in one line:** the AI makes SafeMed easier to understand. It is never what makes SafeMed correct.
+
+This is also the answer to "why not just use Claude?" — not because a model could not describe an interaction, but because a system that is *accountable* needs the claim and its citation to exist independently of the model.
+
+### 7.5 Try these yourself
+
+1. **Turn the AI off.** Comment out `ANTHROPIC_API_KEY` in `.env`, `docker compose restart api worker`, and reload the dashboard. Every finding still reads correctly — only the "In plain language" block disappears.
+2. **Read the guardrails.** Open `backend/app/services/ai_explainer.py` and look at `FORBIDDEN_PATTERNS`. For each one, ask what harm it prevents.
+
+---
+
+## Chapter 8 — The Frontend, Auth, and Consent
+
+### 8.1 What a frontend is actually responsible for
+
+It is tempting to think the frontend just displays what the API sends. On a safety screen it has two further duties, and both are design decisions rather than styling:
+
+1. **Not implying things the data does not say.** An empty screen reads as "nothing is wrong". If a request failed, the screen must say so, because silence is a claim.
+2. **Not making everything equally loud.** Ten warnings of equal weight is the same as no warnings.
+
+### 8.2 Where the token lives, and where the user does not
+
+```ts
+const [loading, setLoading] = useState(() => readToken() !== null);
+```
+
+The **token** is stored in `localStorage`, so a refresh does not sign you out. The **user** is never stored — it is fetched from `/auth/me` on load.
+
+That asymmetry is the point. A stored user object would let a stale or tampered copy decide what the interface shows. Asking the server means the server decides, every time. If the token is rejected, we drop it and show the login form, rather than leaving the app in a half-signed-in state where it believes it is authenticated and every request fails.
+
+Every `localStorage` access is wrapped in `try/catch`, because it *throws* rather than returning null in some private-browsing modes.
+
+### 8.3 Routing guards are convenience, not security
+
+```tsx
+if (wantsPatient) return user && user.role !== "CAREGIVER" ? <Dashboard /> : null;
+```
+
+Worth being honest about: this stops someone seeing a screen that would be blank for them. It is not what protects the data. **The server decides what anyone may read** — caregiver endpoints refuse anyone without an active grant, regardless of what the browser believes.
+
+Note `role !== "CAREGIVER"` rather than `role === "PATIENT"`. `ADMIN` is a third role in the enum; an equality check would route an admin to a page that then refuses to render, stranding them on a blank screen with no way out. Enums grow, and exhaustive checks age badly.
+
+### 8.4 Severity in the interface
+
+The patient's findings list is deliberately not a list:
+
+- **SEVERE** — expanded, full text, `role="alert"` so a screen reader announces it immediately
+- **MODERATE / MILD** — collapsed under "Also worth knowing (7)", with a note saying they are not urgent and are not sent to a caregiver
+- **Acknowledged** — folded into a `<details>` element
+
+Three findings demand attention; seven are available without shouting. `role="alert"` is used **only** on severe items — if everything interrupts, nothing does.
+
+### 8.5 Accessibility, because of who uses this
+
+The people most affected by medication interactions are often older, and the project's accessibility decisions follow from that rather than from a checklist:
+
+| Decision | Why |
+|---|---|
+| 18px base text | Not 14px. This is read by people who find small text hard |
+| 44px touch targets | The "I took it" button is tapped daily, possibly with unsteady hands |
+| Colour is never the only signal | Roughly 1 in 12 men has a colour vision deficiency; a red box and an amber box can look identical. Every badge states its status in words, and alerts carry an icon |
+| `aria-label` on dose buttons | "I took it" alone is meaningless out of context. The label reads "Record that you took Metformin at 8:00 AM" |
+| Status words, not jargon | "Later today", "Due now", "Missed" |
+
+### 8.6 Two bugs the browser found
+
+**Rows jumped after every tap.** Four medications at 08:00 share one `scheduled_for` value, and the query ordered by that column alone — so ties came back in whatever order the database felt like. Confirming a dose reshuffled the list and the row you just tapped moved.
+
+Fixed in the query, not the component:
+
+```python
+.order_by(DoseEvent.scheduled_for.asc(), Medication.name_entered.asc())
+```
+
+Fixing it in the frontend would have left the next consumer of that endpoint with the same bug.
+
+**One patient's data under another's name.** Switching patients in the caregiver view kept the previous patient's findings on screen while the new request was in flight. The fix is one React idiom:
+
+```tsx
+<PatientDetail key={selected.id} patient={selected} />
+```
+
+Changing `key` destroys the component and builds a new one, so state cannot survive the switch. On a screen about someone's medication, attributing one person's data to another is the worst thing it could do.
+
+### 8.7 Consent, from both sides
+
+**The patient** invites by email, sees everyone who has access, and revokes in one click — no confirmation dialog asking them to justify it. *Withdrawing consent should never be harder than giving it.* Revoked caregivers stay in the list, greyed out, because the record of who had access and until when is part of what makes consent meaningful to the person who gave it.
+
+**The caregiver** accepts or declines, then sees serious alerts, adherence, and today's doses — read-only. They cannot log a dose on someone else's behalf.
+
+And the screen says what it is not showing:
+
+> "You are shown serious findings only. Maria sees the full list, including minor ones, on their own account."
+
+Without that sentence a caregiver reads a short list as reassurance. It is deliberately not styled as fine print.
+
+### 8.8 Why there is no router library
+
+The route table is about forty lines and has no dependency:
+
+```ts
+export function navigate(to: string): void {
+  if (to === currentPath()) return;
+  window.history.pushState({}, "", to);
+  window.dispatchEvent(new Event(PATH_CHANGE));
+}
+```
+
+`pushState` deliberately does not fire `popstate` — that event is for the back button — so `navigate()` dispatches its own. Every path change, whether from a link or the back button, then flows through one code path.
+
+`Link` stays a real `<a>` with a real `href` and intercepts only a plain left-click, so middle-click, ctrl-click and "open in new tab" keep working and screen readers still announce it as a link.
+
+A dependency is a thing you must understand, update, and justify. For four routes, forty lines you wrote is cheaper than a library you did not.
+
+### 8.9 Try these yourself
+
+1. **Prove the guard is cosmetic.** Sign in as Elena (caregiver) and manually visit `/dashboard`. You are redirected. Now in the browser console: `await fetch('http://localhost:8000/api/v1/findings', {headers:{Authorization:'Bearer '+localStorage.getItem('safemed.token')}}).then(r=>r.json())` — you get *your own* (empty) findings, not Maria's. The server, not the router, is what protects the data.
+2. **See severity routing with your own eyes.** Sign in as `maria@safemed.demo` and count the findings. Sign in as `elena@safemed.demo` and count them again. 10 versus 3.
+3. **Revoke and watch it bite.** As Maria, remove Elena's access. Reload Elena's screen — Maria is gone immediately, no waiting for a token to expire.
+4. **Shrink the window** to phone width. The dose rows stack and the buttons stay full size.
+
+---
+
+## Chapter 9 — Testing, Continuous Integration, and Evaluation
+
+### 9.1 Two different questions
+
+These sound like the same activity and are not:
+
+| | Question it answers |
+|---|---|
+| **Testing** | Does the code do what we said it does? |
+| **Evaluation** | Was what we said worth doing? |
+
+A project can pass every test and still be pointless. SafeMed's tests prove the safety engine finds the interactions it is given; the *evaluation* is what shows that matching by identifier instead of by name finds a quarter more of them. Only one of those answers "why did you build it this way", which is the question you will actually be asked.
+
+So the project does both, and keeps them in separate places: `backend/tests/` and `docs/EVALUATION.md`.
+
+### 9.2 Why the tests use a real PostgreSQL
+
+The easy route is SQLite in memory: no services, instant startup. It was rejected, because the application depends on behaviour SQLite does not share — server-side defaults, real foreign-key enforcement, `ON CONFLICT` semantics, actual type checking.
+
+A test suite running against a different database than production is testing something you do not ship. The bugs it misses are exactly the ones you care about: the ones that only appear under real constraints.
+
+So `conftest.py` creates a separate database next to the development one:
+
+```python
+TEST_DATABASE_URL = settings.DATABASE_URL.rsplit("/", 1)[0] + "/safemed_test"
+```
+
+Derived from the real URL rather than hardcoded, which is why the same `conftest.py` works unchanged on your laptop, in Docker, and in CI — each supplies its own `DATABASE_URL` and the test database follows.
+
+### 9.3 Two fixture decisions worth understanding
+
+**Every test runs in a transaction that is rolled back.**
+
+```python
+connection = engine.connect()
+transaction = connection.begin()
+session = sessionmaker(bind=connection)()
+try:
+    yield session
+finally:
+    session.close()
+    transaction.rollback()
+    connection.close()
+```
+
+Nothing a test writes survives it. That gives two properties that matter more than speed: tests cannot see each other's data, so they pass in any order; and the suite is safe to run a hundred times, because it never leaves anything behind. A suite you are reluctant to run is a suite you stop running.
+
+**The schema is dropped before it is created.**
+
+```python
+Base.metadata.drop_all(eng)
+Base.metadata.create_all(eng)
+```
+
+`create_all()` creates missing tables. It does **not** alter existing ones. Without the `drop_all`, the day you add a column every test fails with `column does not exist` — and the cause looks like your new code rather than a stale test database. That is an hour lost to a problem that is not real. Two lines prevents it permanently.
+
+### 9.4 Testing through real HTTP, with real tokens
+
+The consent and RBAC tests do not call the permission functions directly. They start the app, register real users, log in to get real JWTs, and make real requests:
+
+```python
+response = client.get(
+    f"/api/v1/caregiver/patients/{patient_id}/findings",
+    headers={"Authorization": f"Bearer {caregiver_token}"},
+)
+assert response.status_code == 403
+```
+
+This matters for an access-control test specifically. A unit test of `require_active_grant` proves the function returns what you expect when you call it. It proves nothing about whether the route *uses* it — and a route that forgets its dependency is precisely how authorization gets bypassed in real systems. Going through HTTP tests the wiring, which is where the hole would be.
+
+> **The rule:** test security at the boundary an attacker would actually reach.
+
+One related decision, visible in those tests: an unknown patient id and a patient you have no grant for both return **403**, never 404. A 404 would confirm the id does not exist, and a 403 that is only ever returned for *real* patients lets an attacker enumerate who exists by reading the status code. Identical responses leak nothing.
+
+### 9.5 When the test is wrong
+
+While adding dose history, this test was written:
+
+```python
+def test_history_does_not_invent_doses_for_past_days(...)
+```
+
+It failed. The first instinct is to go fix the code.
+
+The code was right. The assumption was wrong — a dose *schedule* is a standing instruction ("08:00 daily"), and a dose *event* is a row that exists only once something generated it. Asking for history of a day before any rows were generated correctly returns nothing, not because of a bug but because nothing happened that day.
+
+The test was rewritten to state the real behaviour. Nothing in the application changed.
+
+> **A failing test is a disagreement between two things you wrote.** Before changing the code, work out which of the two is wrong. Roughly a quarter of the time it is the test — and a test "fixed" by bending the code around a false assumption leaves you worse off than having no test at all.
+
+### 9.6 Regression tests, and where to put the fix
+
+The browser found a real bug: tapping **I took it** reshuffled the dose list. Four medications at 08:00 share one `scheduled_for` value, and the query ordered by that column alone, so tied rows came back in whatever order PostgreSQL chose — a different order each time.
+
+The fix was one line, in the repository:
+
+```python
+.order_by(DoseEvent.scheduled_for.asc(), Medication.name_entered.asc())
+```
+
+It could have been fixed in the React component by sorting the array after fetching. That would have worked, and it would have been wrong: `/doses/history`, `/caregiver/patients/{id}/doses/today` and every future consumer of that query would still have the bug, each waiting to be fixed separately.
+
+> **Fix a bug at the layer where the mistake was made,** not at the layer where you noticed it.
+
+Then a test was added that fails if anyone removes the secondary sort — because the bug is invisible in any dataset where no two doses share a time, which includes most test fixtures someone might write later.
+
+### 9.7 Continuous integration, and the tests nobody ran
+
+`.github/workflows/ci.yml` runs on every push and every pull request: the backend suite against a real PostgreSQL service container, and the frontend typecheck, lint and unit tests. Two jobs, in parallel, deliberately — a frontend type error must not hide a backend test failure, or the reverse.
+
+Three details that are decisions rather than boilerplate:
+
+```yaml
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+```
+
+A second push to the same branch cancels the first run. Only the newest commit's result is interesting, and runner minutes are finite.
+
+```yaml
+run: npm ci
+```
+
+`npm ci` installs exactly what the lock file says and fails if the lock file and `package.json` disagree. `npm install` would quietly resolve something newer, which means CI could pass against dependencies nobody has committed — and then fail on a teammate's machine.
+
+```yaml
+options: >-
+  --health-cmd pg_isready
+```
+
+Without the health check, the test step can start before PostgreSQL accepts connections, and the job fails for no real reason. A flaky CI is worse than no CI: people learn to ignore a red build.
+
+**And the reason this chapter exists at all.** `frontend/tests/auth-validation.test.mjs` was committed on 10 November, contains five passing tests, and had never been executed by anything — there was no `test` script in `package.json`. Five tests of real value, invisible for nine days.
+
+> **A test that is not in CI is not a test.** It is a file that happens to contain assertions. Until something runs it automatically, nobody finds out when it breaks.
+
+### 9.8 What evaluation adds
+
+The project makes three expensive design claims. Each cost real complexity, so each was measured rather than asserted. `backend/scripts/evaluate.py` runs five experiments and writes `docs/EVALUATION.md`:
+
+| Claim | Measured |
+|---|---|
+| Identifier matching beats name matching | Name matching alone finds 63 of 84 real interactions — **missing 25%, two of them SEVERE** |
+| Recalls need tiered confidence | **45 of 100** sampled FDA recalls carry no product identifier at all |
+| Severity routing protects caregivers | **70%** fewer findings reach a caregiver than the patient sees |
+| The worker is idempotent | **0** duplicates across three full re-runs |
+
+That first number is the aspirin/warfarin bug expressed as a measurement. The bug was one missed interaction; the evaluation says how many others were waiting.
+
+The report ends with threats to validity, and that section is not modesty — it is the difference between a measurement and a marketing claim:
+
+- The fifteen-medication panel was **chosen, not sampled.** It is realistic, not representative.
+- **One interaction dataset.** This measures internal consistency, never completeness.
+- **No clinical validation.** No pharmacist has reviewed the output.
+
+State the limits yourself. A marker who finds a limitation you did not mention stops believing the numbers you did.
+
+### 9.9 Try these yourself
+
+1. **Watch the rollback work.** Add a test that creates a user and asserts it exists. Run the suite twice. It passes both times — if the fixture leaked, the second run would fail on a duplicate email.
+2. **Cause the stale-schema failure on purpose.** Comment out `Base.metadata.drop_all(eng)`, add a column to any model, and run the suite. Read the error and notice how little it points at the real cause. Then put the line back.
+3. **Break the secondary sort.** Delete `Medication.name_entered.asc()` from the ordering and run `pytest backend/tests/test_dose_repository.py`. One test fails and names the problem.
+4. **Run what CI runs**, before pushing rather than after:
+   ```bash
+   docker compose exec api pytest
+   cd frontend && npx tsc -b && npm run lint && npm test
+   ```
+5. **Re-run the evaluation.** `docker compose exec api python -m scripts.evaluate` and diff `docs/EVALUATION.md`. The numbers should not move. If they do, something changed that you did not intend to change.
 
 ---
 
@@ -435,5 +1201,17 @@ Understanding comes from poking at it:
 | **RBAC** | Role-Based Access Control — permissions by role, not per person |
 | **Idempotent** | Safe to run twice without changing the result (matters for our worker) |
 | **Migration vs. seed** | Migration changes structure; seed inserts starting data |
+| **RXCUI** | RxNorm stable numeric id for a drug concept - what makes "aspirin" and "Acetylsalicylic acid" comparable |
+| **Dedupe key** | A hash of who and what a finding concerns, never when, so re-running finds nothing new |
+| **Provenance** | Where a claim came from: source name, version, and the raw evidence |
+| **Tiered matching** | CONFIRMED vs POSSIBLE vs no match - saying how sure we are instead of guessing |
+| **Grace period** | Minutes after a scheduled dose before it counts as missed |
+| **Severity routing** | Only SEVERE findings reach a caregiver; the patient sees all of them |
+| **Guardrail** | A check on AI output that discards a response rather than showing it |
+| **Protocol (Python)** | A required shape rather than a base class - any object with the right methods fits |
+| **CI** | Continuous integration - a server that runs your tests automatically on every push |
+| **Fixture** | Reusable setup a test asks for by name (our `db` fixture hands over a session that is rolled back afterwards) |
+| **Regression test** | A test written after a bug, whose job is to fail if that bug ever comes back |
+| **Threats to validity** | The stated reasons a measurement might not generalise - named by you, not left for the reader to find |
 
 ---

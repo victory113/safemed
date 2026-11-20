@@ -47,3 +47,7 @@
   .auth-card .sm-button { transition: none; }
   .auth-card .sm-button:hover { transform: none; }
 }
+
+/* A failed sign-in or registration. Uses the severe tokens rather than the
+ * default primary tint, so an error never looks like a confirmation. */
+.auth-feedback--error { background: var(--color-severe-bg); border: 1px solid var(--color-severe); color: var(--color-text); }

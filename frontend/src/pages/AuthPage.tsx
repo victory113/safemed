@@ -1,26 +1,47 @@
 import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { registerAccount, signIn } from '../api/auth';
 import { Button, Input } from '../components';
 import './auth.css';
 import { validateAuth } from './auth-validation';
 import type { AuthField } from './auth-validation';
+import { Link } from '../session/Link';
+import { navigate } from '../session/navigation';
+import { errorMessage } from '../session/errors';
+import { useSession } from '../session/useSession';
 
 /** Shared layout keeps login and registration consistent; wrappers choose the mode. */
 export function AuthPage({ register = false }: { register?: boolean }) {
+  const { logIn, signUp } = useSession();
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<AuthField, string>>>({});
+  // An error from the API, as opposed to a field that failed local validation.
+  const [apiError, setApiError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [notice, setNotice] = useState<{ message: string; error?: boolean } | null>(null);
-  const submitting = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
+  /* `pending` disables the button, but setState is not synchronous - a fast
+   * double-tap can fire a second submit before React has re-rendered. This
+   * guard is a ref because a ref updates immediately, and creating two
+   * accounts from one impatient tap is not a mistake we can undo for the
+   * person. Credit to Pacifique, who added this on feature/api-client. */
+  const submitting = useRef(false);
+
+  /**
+   * Validate locally first, then talk to the API.
+   *
+   * Local validation stays because it gives instant, per-field messages. The
+   * server is still the authority - it decides whether the email is taken and
+   * whether the password is right - so a server error is shown as its own
+   * message rather than being attached to a guessed field.
+   */
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submitting.current) return;
     const data = new FormData(event.currentTarget);
+
     const next = validateAuth(data, register);
     setErrors(next);
-    setNotice(null);
+    setApiError(null);
+
     // Focus the first invalid field so keyboard and screen-reader users can fix it.
     const first = Object.keys(next)[0];
     if (first) {
@@ -28,29 +49,25 @@ export function AuthPage({ register = false }: { register?: boolean }) {
       return;
     }
 
+    const email = String(data.get('email') ?? '').trim();
+    const password = String(data.get('password') ?? '');
+
     submitting.current = true;
     setPending(true);
-    const credentials = {
-      email: String(data.get('email')).trim(),
-      password: String(data.get('password')),
-    };
     try {
       if (register) {
-        await registerAccount({
-          ...credentials,
-          full_name: String(data.get('full_name')).trim(),
-          role: data.get('role') === 'CAREGIVER' ? 'CAREGIVER' : 'PATIENT',
-        });
-        setNotice({ message: 'Account created. You can now log in.' });
+        await signUp(
+          String(data.get('full_name') ?? '').trim(),
+          email,
+          password,
+          String(data.get('role') ?? 'PATIENT'),
+        );
       } else {
-        const user = await signIn(credentials);
-        setNotice({ message: `You’re signed in, ${user.full_name}.` });
+        await logIn(email, password);
       }
-      formRef.current?.reset();
-      setShowPassword(false);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Please try again.';
-      setNotice({ error: true, message });
+      navigate('/dashboard');
+    } catch (caught) {
+      setApiError(errorMessage(caught));
     } finally {
       submitting.current = false;
       setPending(false);
@@ -71,11 +88,13 @@ export function AuthPage({ register = false }: { register?: boolean }) {
             <p>{register ? 'A simpler way to keep track of medications. For you, or someone you care for.' : 'Your medications, your routine.\nA little easier to keep track of.'}</p>
           </div>
           <nav className="auth-tabs" aria-label="Account access">
-            <a href="/login" aria-current={!register ? 'page' : undefined}>Log in</a>
-            <a href="/register" aria-current={register ? 'page' : undefined}>Create account</a>
+            <Link to="/login" aria-current={!register ? 'page' : undefined}>Log in</Link>
+            <Link to="/register" aria-current={register ? 'page' : undefined}>Create account</Link>
           </nav>
           {/* noValidate lets us display consistent, field-specific messages. */}
-          <form id="auth-form" ref={formRef} onSubmit={submit} onChange={() => setNotice(null)} aria-busy={pending} noValidate>
+          {/* aria-busy tells a screen reader the form is working, which is the
+              only cue a non-sighted user gets that the button text changed. */}
+          <form id="auth-form" ref={formRef} onSubmit={submit} onChange={() => setApiError(null)} aria-busy={pending} noValidate>
             {register && <Input label="Full name" name="full_name" autoComplete="name" required error={errors.full_name} placeholder="Your full name" />}
             <Input label="Email address" name="email" type="email" autoComplete="email" autoCapitalize="none" spellCheck={false} required error={errors.email} placeholder="you@example.com" />
             {/* A separate type="button" prevents Show/Hide from submitting the form. */}
@@ -85,14 +104,17 @@ export function AuthPage({ register = false }: { register?: boolean }) {
             </div>
             {register && <fieldset className="auth-role"><legend>I’m here as a</legend><div><label><input type="radio" name="role" value="PATIENT" defaultChecked /> Patient</label><label><input type="radio" name="role" value="CAREGIVER" /> Caregiver</label></div></fieldset>}
             <Button type="submit" size="lg" fullWidth disabled={pending}>
-              {register ? (pending ? 'Creating account…' : 'Create account') : (pending ? 'Signing in…' : 'Log in')}
-              <span aria-hidden="true"> →</span>
+              {pending
+                ? register ? 'Creating your account...' : 'Signing you in...'
+                : <>{register ? 'Create account' : 'Log in'}<span aria-hidden="true"> →</span></>}
             </Button>
-            {notice && (
-              <p className="auth-feedback" role={notice.error ? 'alert' : 'status'}>{notice.message}</p>
-            )}
+            {/* role="alert" so a screen reader announces a failed sign-in
+                immediately. The message is whatever the API said - we never
+                guess which field was wrong, because on login the server
+                deliberately does not tell us. */}
+            {apiError && <p className="auth-feedback auth-feedback--error" role="alert">{apiError}</p>}
           </form>
-          <p className="auth-switch">{register ? 'Already have an account?' : 'New to SafeMed?'} <a href={register ? '/login' : '/register'}>{register ? 'Log in' : 'Create an account'}</a></p>
+          <p className="auth-switch">{register ? 'Already have an account?' : 'New to SafeMed?'} <Link to={register ? '/login' : '/register'}>{register ? 'Log in' : 'Create an account'}</Link></p>
         </section>
         <p className="auth-care-note"><span aria-hidden="true">♡</span> A little support for your everyday care.</p>
       </main>
