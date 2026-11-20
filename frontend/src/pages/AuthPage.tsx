@@ -18,6 +18,12 @@ export function AuthPage({ register = false }: { register?: boolean }) {
   const [apiError, setApiError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
+  /* `pending` disables the button, but setState is not synchronous - a fast
+   * double-tap can fire a second submit before React has re-rendered. This
+   * guard is a ref because a ref updates immediately, and creating two
+   * accounts from one impatient tap is not a mistake we can undo for the
+   * person. Credit to Pacifique, who added this on feature/api-client. */
+  const submitting = useRef(false);
 
   /**
    * Validate locally first, then talk to the API.
@@ -29,6 +35,7 @@ export function AuthPage({ register = false }: { register?: boolean }) {
    */
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitting.current) return;
     const data = new FormData(event.currentTarget);
 
     const next = validateAuth(data, register);
@@ -45,6 +52,7 @@ export function AuthPage({ register = false }: { register?: boolean }) {
     const email = String(data.get('email') ?? '').trim();
     const password = String(data.get('password') ?? '');
 
+    submitting.current = true;
     setPending(true);
     try {
       if (register) {
@@ -61,6 +69,7 @@ export function AuthPage({ register = false }: { register?: boolean }) {
     } catch (caught) {
       setApiError(errorMessage(caught));
     } finally {
+      submitting.current = false;
       setPending(false);
     }
   }
@@ -83,7 +92,9 @@ export function AuthPage({ register = false }: { register?: boolean }) {
             <Link to="/register" aria-current={register ? 'page' : undefined}>Create account</Link>
           </nav>
           {/* noValidate lets us display consistent, field-specific messages. */}
-          <form id="auth-form" ref={formRef} onSubmit={submit} onChange={() => setApiError(null)} noValidate>
+          {/* aria-busy tells a screen reader the form is working, which is the
+              only cue a non-sighted user gets that the button text changed. */}
+          <form id="auth-form" ref={formRef} onSubmit={submit} onChange={() => setApiError(null)} aria-busy={pending} noValidate>
             {register && <Input label="Full name" name="full_name" autoComplete="name" required error={errors.full_name} placeholder="Your full name" />}
             <Input label="Email address" name="email" type="email" autoComplete="email" autoCapitalize="none" spellCheck={false} required error={errors.email} placeholder="you@example.com" />
             {/* A separate type="button" prevents Show/Hide from submitting the form. */}

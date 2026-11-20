@@ -24,6 +24,18 @@ const API = `${BASE_URL}/api/v1`;
 
 const TOKEN_KEY = "safemed.token";
 
+/**
+ * Dispatched on `window` when a request is refused because the token is no
+ * longer accepted.
+ *
+ * The API layer deliberately does not navigate anywhere itself. It announces
+ * that the session is gone; SessionProvider listens and clears the user, and
+ * the route table then does what it already does for anyone signed out. A
+ * hard redirect from here would reload the whole app and discard React state
+ * that has nothing to do with authentication.
+ */
+export const SESSION_EXPIRED = "safemed:session-expired";
+
 /* localStorage throws in some private-browsing modes rather than returning
  * null, so every access is guarded. A storage failure must log the user out,
  * not crash the page. */
@@ -88,10 +100,10 @@ async function request<T>(
 
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
-  if (auth) {
-    const token = readToken();
-    if (token) headers.Authorization = `Bearer ${token}`;
-  }
+  /* Held in a variable rather than read twice: the 401 handling below has to
+   * compare against the token this particular request sent. */
+  const sentToken = auth ? readToken() : null;
+  if (sentToken) headers.Authorization = `Bearer ${sentToken}`;
 
   let response: Response;
   try {
@@ -105,6 +117,21 @@ async function request<T>(
      * "the API is unreachable" rather than any HTTP error. Status 0 marks it
      * as such. */
     throw new ApiError(0, "Could not reach SafeMed. Is the API running?");
+  }
+
+  /* A 401 means the token this request sent is no longer accepted - expired,
+   * revoked, or the account was deactivated. Drop it, so the app stops
+   * believing it is signed in instead of retrying forever against a token
+   * the server has already rejected.
+   *
+   * The equality check is the important part. A slow request can return 401
+   * *after* the user has signed in again, and clearing the token then would
+   * sign them out of the session they just established. So only clear the
+   * token this request actually used, and only while it is still the current
+   * one. Credit to Pacifique, who identified this race on feature/api-client. */
+  if (response.status === 401 && sentToken !== null && readToken() === sentToken) {
+    writeToken(null);
+    window.dispatchEvent(new Event(SESSION_EXPIRED));
   }
 
   if (response.status === 204) return undefined as T;

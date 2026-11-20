@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
-import { api, readToken, writeToken } from "../api/client";
+import { SESSION_EXPIRED, api, readToken, writeToken } from "../api/client";
 import type { User } from "../api/types";
 import { SessionContext } from "./context";
 
@@ -49,6 +49,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  /* The API layer has already discarded the dead token by the time this
+   * fires; all that is left is to forget the user, which drops the app back
+   * to the signed-out routes. Registered once for the whole app, because any
+   * request from any screen can be the one that discovers the session is
+   * gone. */
+  useEffect(() => {
+    const expired = () => setUser(null);
+    window.addEventListener(SESSION_EXPIRED, expired);
+    return () => window.removeEventListener(SESSION_EXPIRED, expired);
   }, []);
 
   const logIn = useCallback(async (email: string, password: string) => {
