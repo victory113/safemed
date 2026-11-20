@@ -3,12 +3,13 @@ import uuid
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.security import decode_access_token
 from app.db.session import get_db
-from app.models.enums import UserRole
-from app.models.user import User
+from app.models.enums import ConsentStatus, UserRole
+from app.models.user import ConsentGrant, User
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -60,3 +61,33 @@ def require_role(*roles: UserRole):
         return user
 
     return checker
+
+
+def require_active_grant(
+    patient_id: uuid.UUID,
+    caregiver: User = Depends(require_role(UserRole.CAREGIVER)),
+    db: Session = Depends(get_db),
+) -> User:
+    """Return the patient only if this caregiver holds an ACTIVE grant for them.
+
+    Use it on any route shaped /caregiver/patients/{patient_id}/... . The grant
+    is looked up on every request, so revoking takes effect on the very next
+    call. A pending, revoked or missing grant, and a patient id that does not
+    exist, all give the same 403, so the response never confirms whether a
+    particular patient exists.
+    """
+    patient = db.scalar(
+        select(User)
+        .join(ConsentGrant, ConsentGrant.patient_id == User.id)
+        .where(
+            User.id == patient_id,
+            ConsentGrant.caregiver_id == caregiver.id,
+            ConsentGrant.status == ConsentStatus.ACTIVE,
+        )
+    )
+    if patient is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to this patient",
+        )
+    return patient
