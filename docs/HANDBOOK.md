@@ -1011,6 +1011,178 @@ A dependency is a thing you must understand, update, and justify. For four route
 
 ---
 
+## Chapter 9 — Testing, Continuous Integration, and Evaluation
+
+### 9.1 Two different questions
+
+These sound like the same activity and are not:
+
+| | Question it answers |
+|---|---|
+| **Testing** | Does the code do what we said it does? |
+| **Evaluation** | Was what we said worth doing? |
+
+A project can pass every test and still be pointless. SafeMed's tests prove the safety engine finds the interactions it is given; the *evaluation* is what shows that matching by identifier instead of by name finds a quarter more of them. Only one of those answers "why did you build it this way", which is the question you will actually be asked.
+
+So the project does both, and keeps them in separate places: `backend/tests/` and `docs/EVALUATION.md`.
+
+### 9.2 Why the tests use a real PostgreSQL
+
+The easy route is SQLite in memory: no services, instant startup. It was rejected, because the application depends on behaviour SQLite does not share — server-side defaults, real foreign-key enforcement, `ON CONFLICT` semantics, actual type checking.
+
+A test suite running against a different database than production is testing something you do not ship. The bugs it misses are exactly the ones you care about: the ones that only appear under real constraints.
+
+So `conftest.py` creates a separate database next to the development one:
+
+```python
+TEST_DATABASE_URL = settings.DATABASE_URL.rsplit("/", 1)[0] + "/safemed_test"
+```
+
+Derived from the real URL rather than hardcoded, which is why the same `conftest.py` works unchanged on your laptop, in Docker, and in CI — each supplies its own `DATABASE_URL` and the test database follows.
+
+### 9.3 Two fixture decisions worth understanding
+
+**Every test runs in a transaction that is rolled back.**
+
+```python
+connection = engine.connect()
+transaction = connection.begin()
+session = sessionmaker(bind=connection)()
+try:
+    yield session
+finally:
+    session.close()
+    transaction.rollback()
+    connection.close()
+```
+
+Nothing a test writes survives it. That gives two properties that matter more than speed: tests cannot see each other's data, so they pass in any order; and the suite is safe to run a hundred times, because it never leaves anything behind. A suite you are reluctant to run is a suite you stop running.
+
+**The schema is dropped before it is created.**
+
+```python
+Base.metadata.drop_all(eng)
+Base.metadata.create_all(eng)
+```
+
+`create_all()` creates missing tables. It does **not** alter existing ones. Without the `drop_all`, the day you add a column every test fails with `column does not exist` — and the cause looks like your new code rather than a stale test database. That is an hour lost to a problem that is not real. Two lines prevents it permanently.
+
+### 9.4 Testing through real HTTP, with real tokens
+
+The consent and RBAC tests do not call the permission functions directly. They start the app, register real users, log in to get real JWTs, and make real requests:
+
+```python
+response = client.get(
+    f"/api/v1/caregiver/patients/{patient_id}/findings",
+    headers={"Authorization": f"Bearer {caregiver_token}"},
+)
+assert response.status_code == 403
+```
+
+This matters for an access-control test specifically. A unit test of `require_active_grant` proves the function returns what you expect when you call it. It proves nothing about whether the route *uses* it — and a route that forgets its dependency is precisely how authorization gets bypassed in real systems. Going through HTTP tests the wiring, which is where the hole would be.
+
+> **The rule:** test security at the boundary an attacker would actually reach.
+
+One related decision, visible in those tests: an unknown patient id and a patient you have no grant for both return **403**, never 404. A 404 would confirm the id does not exist, and a 403 that is only ever returned for *real* patients lets an attacker enumerate who exists by reading the status code. Identical responses leak nothing.
+
+### 9.5 When the test is wrong
+
+While adding dose history, this test was written:
+
+```python
+def test_history_does_not_invent_doses_for_past_days(...)
+```
+
+It failed. The first instinct is to go fix the code.
+
+The code was right. The assumption was wrong — a dose *schedule* is a standing instruction ("08:00 daily"), and a dose *event* is a row that exists only once something generated it. Asking for history of a day before any rows were generated correctly returns nothing, not because of a bug but because nothing happened that day.
+
+The test was rewritten to state the real behaviour. Nothing in the application changed.
+
+> **A failing test is a disagreement between two things you wrote.** Before changing the code, work out which of the two is wrong. Roughly a quarter of the time it is the test — and a test "fixed" by bending the code around a false assumption leaves you worse off than having no test at all.
+
+### 9.6 Regression tests, and where to put the fix
+
+The browser found a real bug: tapping **I took it** reshuffled the dose list. Four medications at 08:00 share one `scheduled_for` value, and the query ordered by that column alone, so tied rows came back in whatever order PostgreSQL chose — a different order each time.
+
+The fix was one line, in the repository:
+
+```python
+.order_by(DoseEvent.scheduled_for.asc(), Medication.name_entered.asc())
+```
+
+It could have been fixed in the React component by sorting the array after fetching. That would have worked, and it would have been wrong: `/doses/history`, `/caregiver/patients/{id}/doses/today` and every future consumer of that query would still have the bug, each waiting to be fixed separately.
+
+> **Fix a bug at the layer where the mistake was made,** not at the layer where you noticed it.
+
+Then a test was added that fails if anyone removes the secondary sort — because the bug is invisible in any dataset where no two doses share a time, which includes most test fixtures someone might write later.
+
+### 9.7 Continuous integration, and the tests nobody ran
+
+`.github/workflows/ci.yml` runs on every push and every pull request: the backend suite against a real PostgreSQL service container, and the frontend typecheck, lint and unit tests. Two jobs, in parallel, deliberately — a frontend type error must not hide a backend test failure, or the reverse.
+
+Three details that are decisions rather than boilerplate:
+
+```yaml
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+```
+
+A second push to the same branch cancels the first run. Only the newest commit's result is interesting, and runner minutes are finite.
+
+```yaml
+run: npm ci
+```
+
+`npm ci` installs exactly what the lock file says and fails if the lock file and `package.json` disagree. `npm install` would quietly resolve something newer, which means CI could pass against dependencies nobody has committed — and then fail on a teammate's machine.
+
+```yaml
+options: >-
+  --health-cmd pg_isready
+```
+
+Without the health check, the test step can start before PostgreSQL accepts connections, and the job fails for no real reason. A flaky CI is worse than no CI: people learn to ignore a red build.
+
+**And the reason this chapter exists at all.** `frontend/tests/auth-validation.test.mjs` was committed on 10 November, contains five passing tests, and had never been executed by anything — there was no `test` script in `package.json`. Five tests of real value, invisible for nine days.
+
+> **A test that is not in CI is not a test.** It is a file that happens to contain assertions. Until something runs it automatically, nobody finds out when it breaks.
+
+### 9.8 What evaluation adds
+
+The project makes three expensive design claims. Each cost real complexity, so each was measured rather than asserted. `backend/scripts/evaluate.py` runs five experiments and writes `docs/EVALUATION.md`:
+
+| Claim | Measured |
+|---|---|
+| Identifier matching beats name matching | Name matching alone finds 63 of 84 real interactions — **missing 25%, two of them SEVERE** |
+| Recalls need tiered confidence | **45 of 100** sampled FDA recalls carry no product identifier at all |
+| Severity routing protects caregivers | **70%** fewer findings reach a caregiver than the patient sees |
+| The worker is idempotent | **0** duplicates across three full re-runs |
+
+That first number is the aspirin/warfarin bug expressed as a measurement. The bug was one missed interaction; the evaluation says how many others were waiting.
+
+The report ends with threats to validity, and that section is not modesty — it is the difference between a measurement and a marketing claim:
+
+- The fifteen-medication panel was **chosen, not sampled.** It is realistic, not representative.
+- **One interaction dataset.** This measures internal consistency, never completeness.
+- **No clinical validation.** No pharmacist has reviewed the output.
+
+State the limits yourself. A marker who finds a limitation you did not mention stops believing the numbers you did.
+
+### 9.9 Try these yourself
+
+1. **Watch the rollback work.** Add a test that creates a user and asserts it exists. Run the suite twice. It passes both times — if the fixture leaked, the second run would fail on a duplicate email.
+2. **Cause the stale-schema failure on purpose.** Comment out `Base.metadata.drop_all(eng)`, add a column to any model, and run the suite. Read the error and notice how little it points at the real cause. Then put the line back.
+3. **Break the secondary sort.** Delete `Medication.name_entered.asc()` from the ordering and run `pytest backend/tests/test_dose_repository.py`. One test fails and names the problem.
+4. **Run what CI runs**, before pushing rather than after:
+   ```bash
+   docker compose exec api pytest
+   cd frontend && npx tsc -b && npm run lint && npm test
+   ```
+5. **Re-run the evaluation.** `docker compose exec api python -m scripts.evaluate` and diff `docs/EVALUATION.md`. The numbers should not move. If they do, something changed that you did not intend to change.
+
+---
+
 ## Glossary
 
 | Term | Plain meaning |
@@ -1037,5 +1209,9 @@ A dependency is a thing you must understand, update, and justify. For four route
 | **Severity routing** | Only SEVERE findings reach a caregiver; the patient sees all of them |
 | **Guardrail** | A check on AI output that discards a response rather than showing it |
 | **Protocol (Python)** | A required shape rather than a base class - any object with the right methods fits |
+| **CI** | Continuous integration - a server that runs your tests automatically on every push |
+| **Fixture** | Reusable setup a test asks for by name (our `db` fixture hands over a session that is rolled back afterwards) |
+| **Regression test** | A test written after a bug, whose job is to fail if that bug ever comes back |
+| **Threats to validity** | The stated reasons a measurement might not generalise - named by you, not left for the reader to find |
 
 ---

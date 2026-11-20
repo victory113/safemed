@@ -1,0 +1,109 @@
+# Continuous integration for SafeMed.
+#
+# Runs on every push and every pull request, so a branch is known to be green
+# before anyone reviews it. The two jobs are independent and run in parallel -
+# a frontend type error should not hide a backend test failure, or the reverse.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+# A second push to the same branch cancels the first run still in progress.
+# Only the latest commit's result is of any interest, and the free runner
+# minutes are finite.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+
+    # The suite talks to a real PostgreSQL rather than SQLite, because the
+    # application does: it relies on server-side defaults and on real
+    # constraint behaviour. Testing against a different database would mean
+    # testing something we do not ship.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: safemed
+          POSTGRES_PASSWORD: safemed
+          POSTGRES_DB: safemed
+        ports:
+          - 5432:5432
+        # Without this the test step can start before Postgres accepts
+        # connections, and the whole job fails for no real reason.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      # conftest.py derives the test database from this, swapping the final
+      # path segment for safemed_test, and creates it on first run.
+      DATABASE_URL: postgresql+psycopg://safemed:safemed@localhost:5432/safemed
+      # The application refuses to start without a SECRET_KEY and has no
+      # default, on purpose. This value is for this throwaway CI run only; the
+      # real one is never committed.
+      SECRET_KEY: ci-only-not-a-real-secret
+      ENVIRONMENT: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"       # matches backend/Dockerfile
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run tests
+        working-directory: backend
+        run: pytest
+
+  frontend:
+    name: Frontend checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # `npm ci` rather than `npm install`: it installs exactly the versions in
+      # the lock file and fails if the lock file disagrees with package.json,
+      # so CI can never pass against dependencies no one has committed.
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # Type errors first. They are the cheapest to fix and they tend to be
+      # the cause of whatever else is failing.
+      - name: Typecheck
+        working-directory: frontend
+        run: npx tsc -b
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Unit tests
+        working-directory: frontend
+        run: npm test
