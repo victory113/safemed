@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
-from app.api.v1 import auth, consent, doses, findings, medications
+from app.api.v1 import auth, caregiver, consent, doses, findings, medications
 
 app = FastAPI(
     title=f"{settings.PROJECT_NAME} API",
@@ -32,6 +32,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
 app.include_router(consent.router, prefix=settings.API_V1_PREFIX)
 app.include_router(consent.caregiver_router, prefix=settings.API_V1_PREFIX)
+app.include_router(caregiver.router, prefix=settings.API_V1_PREFIX)
 app.include_router(medications.router, prefix=settings.API_V1_PREFIX)
 app.include_router(doses.router, prefix=settings.API_V1_PREFIX)
 app.include_router(findings.router, prefix=settings.API_V1_PREFIX)

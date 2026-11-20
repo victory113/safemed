@@ -120,3 +120,29 @@ export interface Finding {
   acknowledged_at: string | null;
   medications: FindingMedication[];
 }
+
+/* ---- consent and the caregiver views ---- */
+
+export interface Person {
+  id: string;
+  email: string;
+  full_name: string;
+}
+
+export interface ConsentGrant {
+  id: string;
+  status: ConsentStatus;
+  patient: Person;
+  caregiver: Person;
+  granted_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+}
+
+/** A patient a caregiver may currently see. */
+export interface CaregiverPatient {
+  id: string;
+  email: string;
+  full_name: string;
+  granted_at: string | null;
+}

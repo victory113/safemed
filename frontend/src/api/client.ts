@@ -7,6 +7,8 @@
  */
 import type {
   Adherence,
+  CaregiverPatient,
+  ConsentGrant,
   Dose,
   Finding,
   Medication,
@@ -173,4 +175,43 @@ export const api = {
 
   acknowledgeFinding: (id: string) =>
     request<Finding>(`/findings/${id}/acknowledge`, { method: "POST" }),
+};
+
+/**
+ * Consent and the caregiver views.
+ *
+ * Kept as a separate object so it is obvious at the call site which requests
+ * cross a consent boundary. Every `caregiverX` call below is refused with a
+ * 403 unless the signed-in caregiver holds an ACTIVE grant for that patient,
+ * checked by the server on every request.
+ */
+export const consentApi = {
+  listGrants: (status?: "PENDING" | "ACTIVE" | "REVOKED") =>
+    request<ConsentGrant[]>(`/consent${status ? `?status=${status}` : ""}`),
+
+  invite: (caregiverEmail: string) =>
+    request<ConsentGrant>("/consent/invitations", {
+      method: "POST",
+      body: { caregiver_email: caregiverEmail },
+    }),
+
+  accept: (grantId: string) =>
+    request<ConsentGrant>(`/consent/${grantId}/accept`, { method: "POST" }),
+
+  revoke: (grantId: string) =>
+    request<ConsentGrant>(`/consent/${grantId}/revoke`, { method: "POST" }),
+
+  myPatients: () => request<CaregiverPatient[]>("/caregiver/patients"),
+
+  patientFindings: (patientId: string) =>
+    request<Finding[]>(`/caregiver/patients/${patientId}/findings`),
+
+  patientDosesToday: (patientId: string) =>
+    request<Dose[]>(`/caregiver/patients/${patientId}/doses/today`),
+
+  patientAdherence: (patientId: string, days = 7) =>
+    request<Adherence>(`/caregiver/patients/${patientId}/adherence?days=${days}`),
+
+  patientMedications: (patientId: string) =>
+    request<Medication[]>(`/caregiver/patients/${patientId}/medications`),
 };

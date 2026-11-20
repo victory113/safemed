@@ -566,3 +566,10 @@
 .dash .sm-card__header .sm-button {
   white-space: nowrap;
 }
+
+/* A caregiver whose access has been removed. Kept in the list rather than
+ * deleted - the record of who could see what, and until when, is part of
+ * what makes consent meaningful to the person who gave it. */
+.med-row--past {
+  opacity: 0.65;
+}

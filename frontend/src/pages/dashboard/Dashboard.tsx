@@ -8,6 +8,7 @@
  */
 import { useSession } from "../../session/useSession";
 import { AdherenceSummary } from "./AdherenceSummary";
+import { Caregivers } from "./Caregivers";
 import { Medications } from "./Medications";
 import { SafetyFindings } from "./SafetyFindings";
 import { TodayDoses } from "./TodayDoses";
@@ -97,6 +98,7 @@ export function Dashboard() {
               <div className="dash-col dash-col--side">
                 <AdherenceSummary adherence={adherence} />
                 <Medications medications={medications} onChange={reload} />
+                <Caregivers />
               </div>
             </div>
           )
