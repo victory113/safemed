@@ -25,6 +25,7 @@ from app.models.enums import ConsentStatus, UserRole
 from app.models.user import ConsentGrant, User
 from app.repositories import medication as medication_repo
 from app.schemas.medication import MedicationRead
+from app.services.audit import AuditAction, record_event
 
 router = APIRouter(prefix="/consent", tags=["consent"])
 caregiver_router = APIRouter(prefix="/caregiver", tags=["caregiver"])
@@ -109,6 +110,16 @@ def invite_caregiver(
         )
 
     try:
+        db.flush()  # assigns the grant its id and surfaces a duplicate-pair error
+        record_event(
+            db,
+            action=AuditAction.CONSENT_INVITED,
+            entity_type="consent_grant",
+            entity_id=grant.id,
+            actor_id=patient.id,
+            patient_id=patient.id,
+            details={"caregiver_id": str(caregiver.id)},
+        )
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -159,6 +170,15 @@ def accept_invitation(
 
     grant.status = ConsentStatus.ACTIVE
     grant.granted_at = datetime.now(timezone.utc)
+    record_event(
+        db,
+        action=AuditAction.CONSENT_ACCEPTED,
+        entity_type="consent_grant",
+        entity_id=grant.id,
+        actor_id=caregiver.id,
+        patient_id=grant.patient_id,
+        details={"caregiver_id": str(caregiver.id)},
+    )
     db.commit()
     db.refresh(grant)
     return grant
@@ -183,8 +203,22 @@ def revoke_grant(
     if grant.status == ConsentStatus.REVOKED:
         raise HTTPException(status_code=400, detail="This grant is already revoked")
 
+    previous_status = grant.status
     grant.status = ConsentStatus.REVOKED
     grant.revoked_at = datetime.now(timezone.utc)
+    record_event(
+        db,
+        action=AuditAction.CONSENT_REVOKED,
+        entity_type="consent_grant",
+        entity_id=grant.id,
+        actor_id=user.id,
+        patient_id=grant.patient_id,
+        details={
+            "caregiver_id": str(grant.caregiver_id),
+            "revoked_by": user.role.value,
+            "previous_status": previous_status.value,
+        },
+    )
     db.commit()
     db.refresh(grant)
     return grant

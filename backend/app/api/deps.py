@@ -1,7 +1,7 @@
 """Authentication dependencies used by every protected endpoint."""
 import uuid
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -10,6 +10,7 @@ from app.core.security import decode_access_token
 from app.db.session import get_db
 from app.models.enums import ConsentStatus, UserRole
 from app.models.user import ConsentGrant, User
+from app.services.audit import AuditAction, record_event
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -65,6 +66,7 @@ def require_role(*roles: UserRole):
 
 def require_active_grant(
     patient_id: uuid.UUID,
+    request: Request,
     caregiver: User = Depends(require_role(UserRole.CAREGIVER)),
     db: Session = Depends(get_db),
 ) -> User:
@@ -75,6 +77,12 @@ def require_active_grant(
     call. A pending, revoked or missing grant, and a patient id that does not
     exist, all give the same 403, so the response never confirms whether a
     particular patient exists.
+
+    Every successful pass is written to the audit log (who looked at whom, and
+    which route), so any caregiver view that uses this dependency is recorded
+    without the view having to remember to do it. The row is committed here,
+    not left to the view, because several views only read and never commit.
+    A refused request is not recorded as a view: nothing was seen.
     """
     patient = db.scalar(
         select(User)
@@ -90,4 +98,15 @@ def require_active_grant(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to this patient",
         )
+
+    record_event(
+        db,
+        action=AuditAction.PATIENT_RECORD_VIEWED,
+        entity_type="patient",
+        entity_id=patient.id,
+        actor_id=caregiver.id,
+        patient_id=patient.id,
+        details={"method": request.method, "path": request.url.path},
+    )
+    db.commit()
     return patient
