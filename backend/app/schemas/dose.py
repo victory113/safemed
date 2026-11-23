@@ -59,3 +59,32 @@ class DoseRead(BaseModel):
 
 class DoseSkip(BaseModel):
     note: str | None = Field(default=None, max_length=500)
+
+
+class AdherenceRead(BaseModel):
+    """How reliably a patient has been taking their medication.
+
+    `rate` is deliberately nullable. A patient with no resolved doses yet has
+    no adherence rate, and that is not the same thing as 0%. Sending 0.0 would
+    make a brand-new patient look like they had missed everything - which, on
+    a caregiver's screen, is a false alarm manufactured by the API itself.
+
+    Scheduled (still-future) doses are excluded from the denominator for the
+    same reason: nobody should look non-adherent for not having reached
+    tomorrow yet.
+    """
+
+    days: int = Field(description="Size of the window looked at, in days.")
+    taken: int
+    missed: int
+    skipped: int = Field(
+        description=(
+            "Deliberate skips. Counted separately and excluded from the rate - "
+            "a patient who was told to stop for a day did not fail to adhere."
+        )
+    )
+    scheduled: int = Field(description="Doses still in the future.")
+    resolved: int = Field(description="Denominator of the rate: taken + missed.")
+    rate: float | None = Field(
+        description="Share of resolved doses that were taken, 0.0-1.0, or null."
+    )

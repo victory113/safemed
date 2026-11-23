@@ -48,6 +48,11 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app        # live code reload during development
+      # Mounted so scripts run inside the container can write documents that
+      # survive on the host. Without this, scripts/evaluate.py would write its
+      # report into the container's own filesystem, where it is lost on the
+      # next rebuild.
+      - ./docs:/docs
     depends_on:
       db:
         condition: service_healthy

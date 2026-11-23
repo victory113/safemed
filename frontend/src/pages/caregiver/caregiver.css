@@ -1,0 +1,146 @@
+/* The caregiver view. Builds on dashboard.css rather than repeating it. */
+
+.cg-layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  margin-top: var(--space-6);
+}
+
+.cg-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.cg-detail__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+/* ---- patient switcher ---- */
+
+.cg-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.cg-tabs__item {
+  min-height: var(--control-height);
+  padding: 0 var(--space-5);
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.cg-tabs__item:hover {
+  background: var(--color-primary-light);
+}
+
+.cg-tabs__item:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+
+/* aria-current carries the meaning; the styling follows it, so the selected
+   tab can never look selected while being announced as something else. */
+.cg-tabs__item[aria-current="true"] {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+  font-weight: var(--weight-semibold);
+}
+
+.cg-since {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+/* ---- invitations ---- */
+
+.cg-invites {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.cg-invites__who {
+  margin: 0 0 var(--space-3);
+}
+
+.cg-invites__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* ---- the scope note ----
+ *
+ * Deliberately not styled as fine print. A caregiver who misreads this screen
+ * as "everything" would treat a quiet list as reassurance, so the sentence
+ * that corrects that has to be readable.
+ */
+.cg-scope-note {
+  margin: var(--space-5) 0 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-background);
+  border-left: 3px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+}
+
+.cg-read {
+  color: var(--color-success);
+}
+
+/* ---- today's doses, read-only ---- */
+
+.cg-dose {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.cg-dose:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.cg-dose__time {
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.cg-dose__name {
+  min-width: 0;
+}
+
+@media (max-width: 60rem) {
+  .cg-detail__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 40rem) {
+  .cg-dose {
+    grid-template-columns: 5rem minmax(0, 1fr);
+  }
+
+  .cg-dose > .sm-badge {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
