@@ -1,6 +1,6 @@
 # SafeMed — Demo Script
 
-A run sheet for the presentation. Eight beats, about seven minutes of demo.
+A run sheet for the presentation. Nine beats, about eight minutes of demo.
 
 The structure is deliberate: **every beat shows something that is hard to
 fake.** Live FDA data, a real interaction dataset, two accounts seeing
@@ -31,6 +31,18 @@ docker compose exec api python -m scripts.seed_demo
 
 This resets Maria's data and rebuilds it, so it is safe to run twice. It should
 end with **10 findings created**. If it says anything else, run it once more.
+
+It does **not** clear the audit log — nothing can, which is the point. If you
+have rehearsed a few times, beat 7b will show older rows below the current
+run's. Either narrate only the top six, or clear it once before the real
+thing:
+
+```bash
+docker compose exec db psql -U safemed -d safemed -c "DELETE FROM audit_events;"
+```
+
+Doing that from `psql` rather than through the app is itself the honest
+caveat: append-only is enforced in the application, not in the database.
 
 ```bash
 npm run dev --prefix frontend
@@ -188,7 +200,57 @@ Reload Elena's screen.
 > And the record stays, greyed out. We never delete who had access and when.
 > In a health system that history *is* the accountability."
 
-*(Re-invite afterwards if you plan to demo again.)*
+**Do not re-invite yet** — the next beat needs Elena locked out.
+
+### Beat 7b — The audit log (45 seconds) — *answers "how do you know?"*
+
+With Elena's refused screen still up, run this where the room can see it:
+
+```bash
+docker compose exec db psql -U safemed -d safemed -c "SELECT action, created_at FROM audit_events ORDER BY created_at DESC LIMIT 8;"
+```
+
+You will get something close to this — verified on a clean seed:
+
+```
+ patient_record.access_denied | 23:21:24.121187
+ consent.revoked              | 23:21:23.969529
+ patient_record.viewed        | 23:21:23.645082
+ patient_record.viewed        | 23:21:23.363048
+ consent.accepted             | 23:21:11.696452
+ consent.invited              | 23:21:11.694967
+```
+
+> "Consent says what someone is *allowed* to see. This says what they
+> actually did.
+>
+> Reading up from the bottom: Maria invited Elena, Elena accepted, Elena read
+> the record — every page load, not just the first — then Maria revoked her.
+> And the top row: `patient_record.access_denied`. Elena tried again after
+> being revoked, and the attempt is on the record.
+>
+> A log that only records successes can't answer 'did anyone try?' — and
+> that's usually the question you actually have."
+
+**The 1.5 milliseconds are worth knowing about**, if someone asks a database
+question. `consent.invited` and `consent.accepted` are written in the same
+transaction. PostgreSQL's `now()` returns the *transaction* start time, so
+with it both rows get an identical timestamp and their order is lost. The
+column defaults to `clock_timestamp()` instead, which reads the real clock
+each call — which is why those two rows are 1.5ms apart rather than tied.
+
+Expect a few more `patient_record.viewed` rows than you think: each caregiver
+screen makes several requests. That is the honest behaviour — every read is a
+read.
+
+If asked how solid it is:
+
+> "Append-only, and not by convention — the ORM raises if any code tries to
+> change or delete a row, and there's a test for it. Every entry is written
+> inside the same transaction as the thing it describes, so there's never an
+> entry for something that didn't happen, and never a change with no entry."
+
+*(Re-invite Elena afterwards if you plan to demo again.)*
 
 ### Beat 8 — Where the AI is, and where it isn't (45 seconds)
 
@@ -247,6 +309,22 @@ worker's not responding — I'll come back to that." Never debug live. Beats 3,
 > finding still displays. Nothing in the safety path depends on a service being
 > up.
 
+**"What happens if the audit log itself fails?"**
+
+> A caregiver's *read* is still served, and the failure is logged loudly. A
+> write — a consent change, a medication change — is not: it rolls back with
+> its audit row, because the two share a transaction. That split is
+> deliberate. Refusing to show someone a severe interaction because a logging
+> table was unavailable is the worse of the two harms. A hospital under a
+> real regulatory obligation would make the opposite call, and we'd change it.
+
+**"Is it really append-only?"**
+
+> Within the application, yes, and enforced rather than promised — SQLAlchemy
+> listeners raise on any update or delete, and there are tests for both.
+> Someone with direct database access can still rewrite the table. Real
+> tamper-evidence needs cryptographic chaining, and we didn't build that.
+
 **"Is this a medical device?"**
 
 > No, and it is built not to become one. It does not diagnose, prescribe, or
@@ -264,11 +342,11 @@ worker's not responding — I'll come back to that." Never debug live. Beats 3,
 
 **"What would you do next?"**
 
-> Three things. Writing to the audit log — the table exists, and in a system
-> where a caregiver reads someone else's record, who looked at what has to be
-> recorded. Per-user time zones: right now a schedule is stored as wall-clock
-> UTC. And a second interaction dataset, so we could say something about
-> completeness rather than just about our own consistency.
+> Three things. A way to *read* the audit log — we write it, and it's
+> queryable by SQL, but there's no review screen, and a log nobody can read
+> is a log nobody checks. Per-user time zones: right now a schedule is stored
+> as wall-clock UTC. And a second interaction dataset, so we could say
+> something about completeness rather than only about our own consistency.
 
 **"How much is AI-generated?"**
 

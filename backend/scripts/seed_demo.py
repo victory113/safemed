@@ -53,6 +53,7 @@ from app.models.enums import (
 from app.models.medication import DoseSchedule, Medication
 from app.models.safety import SafetyFinding, finding_medications
 from app.models.user import ConsentGrant, User
+from app.services.audit import AuditAction, record_event
 from app.services.rxnorm import normalize_medication_name
 from app.services.safety_engine import SafetyEngine
 
@@ -179,6 +180,31 @@ def main() -> int:
         grant.granted_at = datetime.now(timezone.utc)
         grant.revoked_at = None
         db.flush()
+
+        # The seed writes the grant straight into the database rather than
+        # going through the API, so the audit rows those endpoints would have
+        # written do not exist. Write them here, because the demo reads the
+        # audit log out loud and a history that starts mid-story is a
+        # misleading history. These describe actions that genuinely happened,
+        # just not over HTTP.
+        record_event(
+            db,
+            action=AuditAction.CONSENT_INVITED,
+            entity_type="consent_grant",
+            entity_id=grant.id,
+            actor_id=patient.id,
+            patient_id=patient.id,
+            details={"caregiver_id": str(caregiver.id), "source": "seed_demo"},
+        )
+        record_event(
+            db,
+            action=AuditAction.CONSENT_ACCEPTED,
+            entity_type="consent_grant",
+            entity_id=grant.id,
+            actor_id=caregiver.id,
+            patient_id=patient.id,
+            details={"caregiver_id": str(caregiver.id), "source": "seed_demo"},
+        )
         print("  consent   : active")
 
         print("\n  medications (normalising via RxNorm):")

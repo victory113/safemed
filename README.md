@@ -19,6 +19,10 @@ information affects a patient's medications, a caregiver the patient has
 explicitly authorized is shown the serious findings — and only the serious
 ones.
 
+Every consent change, every medication change, and every time a caregiver
+reads a patient's record is written to an append-only audit log — including
+the attempts that were refused.
+
 **Safety boundary.** Safety findings come from authoritative data evaluated by
 deterministic rules, never from AI. AI is used only to explain a verified
 finding in plain language, receives no patient data, and any response that
@@ -92,7 +96,7 @@ safemed/
 │   ├── Dockerfile
 │   ├── alembic/             database migrations
 │   ├── scripts/             data import, RXCUI resolution, seeding, evaluation
-│   ├── tests/               13 files, 161 tests
+│   ├── tests/               16 files, 194 tests
 │   └── app/
 │       ├── main.py          application entry point
 │       ├── api/             HTTP routes and dependencies
@@ -134,9 +138,13 @@ safemed/
 
 Stated here rather than discovered later:
 
-- **No audit trail yet.** The `audit_events` table is defined and nothing
-  writes to it. In a system where a caregiver can read someone else's
-  medication record, recording who read what is required, not optional.
+- **The audit log has one deliberate hole.** If the audit write itself fails,
+  a caregiver's *read* is still served and the failure is logged loudly
+  rather than refused. Writes keep the strict behaviour. A system under a
+  real regulatory obligation would make the opposite call; the reasoning is
+  in `app/services/audit.py`.
+- **Nothing reads the audit log yet.** Rows are written and queryable by SQL,
+  but there is no screen or endpoint for reviewing them.
 - **Schedules are wall-clock UTC.** There are no per-user time zones, and the
   interface formats times in UTC rather than silently showing the wrong hour.
 - **One interaction dataset.** DDInter only, so the evaluation measures

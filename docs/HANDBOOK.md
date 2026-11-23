@@ -1183,6 +1183,153 @@ State the limits yourself. A marker who finds a limitation you did not mention s
 
 ---
 
+## Chapter 10 — The Audit Log, and Who Gets to Be Trusted
+
+### 10.1 Why this is not optional
+
+Everything else in SafeMed answers "what should this person see?". The audit log answers a different question: **"what did they actually see?"**
+
+Consent without a record of what it permitted is a promise, not a control. If Maria revokes Elena's access, she is entitled to know what Elena looked at while she had it. No amount of correct permission-checking provides that. Only a log does.
+
+This was the last item in the instructor's named MVP, and it is the one a marker is most likely to probe, because it is the part students usually skip.
+
+### 10.2 One rule that shapes the whole design
+
+```python
+db.add(audit_event)
+db.flush()   # NOT commit
+```
+
+`record_event` writes the row into **the caller's transaction** and never commits. The caller's own commit saves the action and its audit row together.
+
+Follow that through:
+
+- The action succeeds → both are saved.
+- The action fails and rolls back → the audit row rolls back with it.
+
+So there is never an audit entry for something that did not happen, and never a change with no entry. If `record_event` committed on its own, a medication update that failed afterwards would leave a log claiming it succeeded — a log that lies is worse than no log, because people act on it.
+
+### 10.3 Append-only, enforced rather than promised
+
+```python
+@event.listens_for(AuditEvent, "before_update")
+def _refuse_update(mapper, connection, target) -> None:
+    raise AuditLogImmutableError("Audit events are append-only and cannot be changed")
+```
+
+The original model said *"append-only by convention: nothing in the application ever updates or deletes a row here."*
+
+A convention is a comment. It holds until someone who has not read the comment writes `grant.audit_event.details = {...}` eighteen months later. These two listeners make the ORM refuse, and there are tests that prove it refuses.
+
+> **If a rule matters, make the machine enforce it.** A rule that lives only in a docstring is a rule you are hoping about.
+
+Note what this does *not* do: it stops the application changing a row. Someone with direct database access can still edit the table. Real append-only storage is a different and much larger problem. Say that plainly if you are asked, rather than overclaiming.
+
+### 10.4 A refusal is the interesting part
+
+The first version logged successful reads only, and documented the choice: *"A refused request is not recorded as a view: nothing was seen."*
+
+That is correct about the word "view", and wrong about what an audit log is for. Consider what each version can answer:
+
+| Question | Successes only | Both |
+|---|---|---|
+| What did Elena read? | yes | yes |
+| Did anyone try to read records they had no grant for? | **no** | yes |
+| Did a caregiver keep trying after being revoked? | **no** | yes |
+
+The second and third questions are the security-relevant ones, and they are invisible if only successes are written. The fix keeps both truths — a refusal is recorded, under its own action:
+
+```python
+PATIENT_RECORD_ACCESS_DENIED = "patient_record.access_denied"
+```
+
+One subtlety worth understanding, because it ties back to Chapter 8. On a refusal, `entity_id` holds the id that was *asked for*, but `patient_id` is left **null**:
+
+```python
+entity_id=patient_id,   # what they asked for - may not exist
+patient_id=None,        # we must not imply it does
+```
+
+The endpoint deliberately returns the same 403 whether the patient exists or not, so the response cannot be used to enumerate who exists. Filling in `patient_id` would make the audit log answer the exact question the 403 was designed to refuse. A privacy property you protect in one place and leak in another is not protected.
+
+### 10.5 The one place the system tolerates an unaudited action
+
+A probe during review turned a working caregiver request into a 500 simply by making the audit writer raise. That is a real failure mode: a broken log takes the dashboard down with it.
+
+Which raises a genuine design question, and it is not a technical one:
+
+> If you cannot record that someone read a record, should you let them read it?
+
+A hospital answers **no**. No audit, no access — the obligation to account for access outranks the access itself.
+
+SafeMed answers **yes**, for reads only, and says so out loud:
+
+```python
+def try_record_event(db: Session, **kwargs) -> AuditEvent | None:
+    """Record an event and commit it, but never raise. Use on a read path."""
+```
+
+The reasoning: refusing to show a caregiver that their mother has a severe interaction, because a logging table was unavailable, is the worse of the two harms. Writes keep the strict behaviour — a consent change that cannot be audited does not happen.
+
+Be ready to defend this one. The answer is not "it was easier"; it is that the two failure modes have different costs, and the trade is written down rather than discovered.
+
+**The savepoint detail matters too:**
+
+```python
+with db.begin_nested():   # SAVEPOINT
+    audit_event = record_event(db, **kwargs)
+```
+
+A failed flush leaves the entire session unusable, and the route still has its own queries to run. Without the savepoint, a broken audit write surfaces as a confusing error in the *next* query rather than where it actually happened. The savepoint confines the damage to the audit insert.
+
+### 10.6 `now()` is not the time
+
+This one is worth remembering well beyond this project.
+
+```python
+server_default=text("clock_timestamp()")   # not func.now()
+```
+
+PostgreSQL's `now()` returns **the time the transaction started**. Every statement inside one transaction sees the same value. Verified in `psql`:
+
+```
+BEGIN;
+SELECT now();                        -- 23:14:44.199224
+SELECT pg_sleep(0.05);
+SELECT now(), clock_timestamp();     -- 23:14:44.199224 | 23:14:44.253365
+```
+
+`now()` did not move. `clock_timestamp()` did.
+
+So two audit rows written during a single request shared a timestamp, and `ORDER BY created_at` returned them in arbitrary order — losing the sequence, which is most of what an audit log is for.
+
+Nothing in SafeMed writes two rows in one request today. That is exactly why it was worth fixing: the trap is invisible until someone adds the second one, and then it fails silently, which is the failure mode this project keeps running into.
+
+> **The bugs worth hunting are the ones that produce plausible wrong answers**, not the ones that crash. An out-of-order audit log looks completely normal.
+
+### 10.7 What this does not do
+
+Stated here so you state it first:
+
+- **Nothing reads the log.** Rows are written and queryable by SQL; there is no review screen. A real system needs one, because a log nobody can read is a log nobody checks.
+- **No retention policy.** Rows accumulate forever. Real systems age them out, and the policy is a legal question before it is a technical one.
+- **No tamper-evidence.** Append-only is enforced in the application, not cryptographically. Someone with database access can still rewrite history.
+- **Repeated refusals are recorded but not alerted on.** The data to detect a caregiver probing for records is there; nothing watches it.
+
+### 10.8 Try these yourself
+
+1. **Watch a refusal get recorded.** Sign in as Elena, have Maria revoke her, then reload Elena's screen. Then:
+   ```bash
+   docker compose exec db psql -U safemed -d safemed -c \
+     "SELECT action, actor_id, patient_id, created_at FROM audit_events ORDER BY created_at DESC LIMIT 5;"
+   ```
+   The revoke and the refused read are both there, in order.
+2. **Prove append-only.** In the same `psql` session the application cannot stop you — but try it through the app's own models and the listener raises. `pytest tests/test_audit.py -k cannot_be` shows both tests.
+3. **Break the audit writer on purpose.** Patch `record_event` to raise, as `tests/test_audit_resilience.py` does, and confirm the caregiver's dashboard still loads while the error appears in the log. Then ask yourself whether you agree with that trade.
+4. **See the `now()` problem for yourself.** Run the `BEGIN; SELECT now(); ...` block above in `psql`. It is a two-minute experiment that will save you a day at some point in your career.
+
+---
+
 ## Glossary
 
 | Term | Plain meaning |
@@ -1213,5 +1360,8 @@ State the limits yourself. A marker who finds a limitation you did not mention s
 | **Fixture** | Reusable setup a test asks for by name (our `db` fixture hands over a session that is rolled back afterwards) |
 | **Regression test** | A test written after a bug, whose job is to fail if that bug ever comes back |
 | **Threats to validity** | The stated reasons a measurement might not generalise - named by you, not left for the reader to find |
+| **Append-only** | A table you can add to but never change or delete - what makes a log usable as evidence |
+| **Savepoint** | A marker inside a transaction you can roll back to without losing the rest of it |
+| **clock_timestamp()** | PostgreSQL function returning the real current time; `now()` returns the transaction start time instead |
 
 ---
