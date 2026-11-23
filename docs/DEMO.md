@@ -239,9 +239,12 @@ with it both rows get an identical timestamp and their order is lost. The
 column defaults to `clock_timestamp()` instead, which reads the real clock
 each call — which is why those two rows are 1.5ms apart rather than tied.
 
-Expect a few more `patient_record.viewed` rows than you think: each caregiver
-screen makes several requests. That is the honest behaviour — every read is a
-read.
+**Expect more `patient_record.viewed` rows than there were page loads.** One
+caregiver screen produces six: three endpoints (`findings`, `doses/today`,
+`adherence`), each hit twice because React's StrictMode deliberately runs
+effects twice in development to surface unsafe ones. A production build makes
+three. Every read genuinely is a read, so logging each one is correct — but
+know the number so you can answer it rather than be surprised by it.
 
 If asked how solid it is:
 
