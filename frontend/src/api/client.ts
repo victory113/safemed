@@ -98,7 +98,7 @@ async function request<T>(
 ): Promise<T> {
   const { method = "GET", body, auth = true } = options;
 
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   /* Held in a variable rather than read twice: the 401 handling below has to
    * compare against the token this particular request sent. */
@@ -116,7 +116,7 @@ async function request<T>(
     /* fetch only rejects on a network-level failure, so this is genuinely
      * "the API is unreachable" rather than any HTTP error. Status 0 marks it
      * as such. */
-    throw new ApiError(0, "Could not reach SafeMed. Is the API running?");
+    throw new ApiError(0, "Could not reach SafeMed. Check your connection and try again.");
   }
 
   /* A 401 means the token this request sent is no longer accepted - expired,
@@ -136,23 +136,19 @@ async function request<T>(
 
   if (response.status === 204) return undefined as T;
 
-  const text = await response.text();
-  let parsed: unknown = null;
-  if (text) {
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      parsed = null;
-    }
-  }
-
   if (!response.ok) {
+    if (response.status >= 500) {
+      throw new ApiError(response.status, "SafeMed is temporarily unavailable. Please try again.");
+    }
+    const detail: unknown = await response.json().catch(() => null);
     throw new ApiError(
       response.status,
-      readDetail(parsed, `Request failed (${response.status})`),
+      readDetail(detail, `Request failed (${response.status})`),
     );
   }
-  return parsed as T;
+  return response.json().catch(() => {
+    throw new ApiError(response.status, "SafeMed returned an unexpected response. Please try again.");
+  }) as Promise<T>;
 }
 
 export const api = {
