@@ -21,6 +21,7 @@ What goes in `details`: ids, which fields changed, previous and new values of
 non-sensitive fields, why a background job acted. Never passwords, tokens, or
 anything that is not already safe to show the patient.
 """
+import logging
 from typing import Any
 from uuid import UUID
 
@@ -28,6 +29,8 @@ from sqlalchemy import event
 from sqlalchemy.orm import Session
 
 from app.models.audit import AuditEvent
+
+logger = logging.getLogger(__name__)
 
 
 class AuditAction:
@@ -46,6 +49,10 @@ class AuditAction:
 
     # Someone looking at a patient's record (a caregiver, for example)
     PATIENT_RECORD_VIEWED = "patient_record.viewed"
+    # A caregiver asked for a record they are not allowed to see. Recorded
+    # under its own action rather than as a "view", because nothing was
+    # shown - but a refused attempt is exactly what an audit log is read for.
+    PATIENT_RECORD_ACCESS_DENIED = "patient_record.access_denied"
 
 
 class AuditLogImmutableError(RuntimeError):
@@ -86,6 +93,50 @@ def record_event(
     db.add(audit_event)
     db.flush()  # assigns id and created_at; the caller's commit saves it
     return audit_event
+
+
+def try_record_event(db: Session, **kwargs: Any) -> AuditEvent | None:
+    """Record an event and commit it, but never raise.
+
+    Use this on a **read** path. `record_event` is the right function when the
+    audit row must live or die with the action it describes - a consent change
+    that cannot be audited should not happen at all. A read is different: if
+    the audit write fails, refusing to show a caregiver that their mother has
+    a severe interaction is the worse of the two outcomes. So the read is
+    served and the failure is made loud in the logs instead of silent.
+
+    That is a deliberate trade, and it is the one place in the system where
+    something happens without a guaranteed audit row. A system with a stricter
+    obligation - a hospital rather than a student project - would make the
+    opposite call and refuse the read.
+
+    The write goes inside a SAVEPOINT. A failed flush otherwise leaves the
+    whole session unusable, and the route handler still has its own queries to
+    run afterwards - so without this, a broken audit write would surface as a
+    confusing failure in the *next* query rather than where it happened. The
+    savepoint confines the damage to the audit insert and nothing else.
+    """
+    try:
+        with db.begin_nested():  # SAVEPOINT: rolled back alone if this fails
+            audit_event = record_event(db, **kwargs)
+    except Exception:
+        logger.exception(
+            "AUDIT WRITE FAILED for action=%s entity=%s - the request was still "
+            "served. This needs investigating: an unaudited read has happened.",
+            kwargs.get("action"),
+            kwargs.get("entity_type"),
+        )
+        return None
+
+    try:
+        db.commit()
+        return audit_event
+    except Exception:
+        logger.exception(
+            "AUDIT COMMIT FAILED for action=%s - the request was still served.",
+            kwargs.get("action"),
+        )
+        return None
 
 
 # ---- Append-only guards -------------------------------------------------

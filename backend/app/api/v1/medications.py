@@ -20,6 +20,7 @@ from app.repositories import dose as dose_repo
 from app.repositories import medication as repo
 from app.schemas.dose import DoseScheduleCreate, DoseScheduleRead
 from app.schemas.medication import MedicationCreate, MedicationRead, MedicationUpdate
+from app.services.audit import AuditAction, record_event
 from app.services.rxnorm import normalize_medication_name
 from app.services.safety_engine import SafetyEngine
 
@@ -69,6 +70,19 @@ def create_medication(
     # A new medication changes the picture, so re-evaluate the whole list.
     SafetyEngine(db).evaluate_patient(current_user.id)
 
+    # record_event, not try_record_event: this is a write. If it cannot be
+    # audited it should not happen, and the shared commit below means the
+    # medication and its audit row are saved together or not at all.
+    record_event(
+        db,
+        action=AuditAction.MEDICATION_CREATED,
+        entity_type="medication",
+        entity_id=medication.id,
+        actor_id=current_user.id,
+        patient_id=current_user.id,
+        details={"rxcui": medication.rxcui, "scheduled_times": len(times)},
+    )
+
     db.commit()
     db.refresh(medication)
     return medication
@@ -98,8 +112,20 @@ def update_medication(
         # Confirming that a record exists is itself a disclosure.
         raise HTTPException(status_code=404, detail="Medication not found")
 
-    repo.update(db, medication=medication, **payload.model_dump(exclude_unset=True))
+    changed = payload.model_dump(exclude_unset=True)
+    repo.update(db, medication=medication, **changed)
     SafetyEngine(db).evaluate_patient(current_user.id)
+    # Field names only, never the values. Which fields were touched is what
+    # makes the history readable; the values are already in the record.
+    record_event(
+        db,
+        action=AuditAction.MEDICATION_UPDATED,
+        entity_type="medication",
+        entity_id=medication.id,
+        actor_id=current_user.id,
+        patient_id=current_user.id,
+        details={"fields": sorted(changed)},
+    )
     db.commit()
     db.refresh(medication)
     return medication
@@ -126,6 +152,15 @@ def stop_medication(
         medication=medication,
         status=MedicationStatus.STOPPED,
         stopped_on=date.today(),
+    )
+    record_event(
+        db,
+        action=AuditAction.MEDICATION_STOPPED,
+        entity_type="medication",
+        entity_id=medication.id,
+        actor_id=current_user.id,
+        patient_id=current_user.id,
+        details={"stopped_on": medication.stopped_on.isoformat()},
     )
     db.commit()
     db.refresh(medication)

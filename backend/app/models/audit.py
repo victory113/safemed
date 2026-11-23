@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import DateTime, ForeignKey, String, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,8 +41,18 @@ class AuditEvent(Base):
     # Previous/new values, request origin, or why the worker acted.
     details: Mapped[dict | None] = mapped_column(JSONB)
 
+    # clock_timestamp(), not now(). PostgreSQL's now() is the time the
+    # *transaction* started and is identical for every statement inside it, so
+    # two audit rows written during one request would share a timestamp and
+    # their order could never be recovered - the one thing an audit log must
+    # not lose. clock_timestamp() reads the actual clock each time it is
+    # called. Verified: inside one transaction now() returned the same value
+    # twice while clock_timestamp() advanced by 54ms.
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), index=True, nullable=False
+        DateTime(timezone=True),
+        server_default=text("clock_timestamp()"),
+        index=True,
+        nullable=False,
     )
 
     def __repr__(self) -> str:

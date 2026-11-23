@@ -10,7 +10,7 @@ from app.core.security import decode_access_token
 from app.db.session import get_db
 from app.models.enums import ConsentStatus, UserRole
 from app.models.user import ConsentGrant, User
-from app.services.audit import AuditAction, record_event
+from app.services.audit import AuditAction, try_record_event
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -82,7 +82,15 @@ def require_active_grant(
     which route), so any caregiver view that uses this dependency is recorded
     without the view having to remember to do it. The row is committed here,
     not left to the view, because several views only read and never commit.
-    A refused request is not recorded as a view: nothing was seen.
+
+    A refusal is recorded too, under its own action. It is deliberately not a
+    "view" - nothing was shown - but someone repeatedly asking for records
+    they have no grant for is precisely what an audit log exists to surface,
+    and that pattern is invisible if only successes are written.
+
+    Both writes go through `try_record_event`, so a broken audit backend
+    cannot take the caregiver's dashboard down with it. See the note in
+    app/services/audit.py for why a read is treated differently to a write.
     """
     patient = db.scalar(
         select(User)
@@ -94,12 +102,24 @@ def require_active_grant(
         )
     )
     if patient is None:
+        # entity_id is the id that was *asked for*, which may not belong to
+        # anyone. patient_id stays null precisely because we must not imply
+        # that a record exists just by having been asked about it.
+        try_record_event(
+            db,
+            action=AuditAction.PATIENT_RECORD_ACCESS_DENIED,
+            entity_type="patient",
+            entity_id=patient_id,
+            actor_id=caregiver.id,
+            patient_id=None,
+            details={"method": request.method, "path": request.url.path},
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to this patient",
         )
 
-    record_event(
+    try_record_event(
         db,
         action=AuditAction.PATIENT_RECORD_VIEWED,
         entity_type="patient",
@@ -108,5 +128,4 @@ def require_active_grant(
         patient_id=patient.id,
         details={"method": request.method, "path": request.url.path},
     )
-    db.commit()
     return patient
