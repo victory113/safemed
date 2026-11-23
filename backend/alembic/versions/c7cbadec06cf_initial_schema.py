@@ -222,3 +222,27 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_users_email'), table_name='users')
     op.drop_table('users')
     # ### end Alembic commands ###
+
+    # Autogenerate creates PostgreSQL ENUM types alongside the tables but
+    # never drops them - the stub above even says "please adjust!". Without
+    # this, a downgrade leaves eleven orphaned types behind and the next
+    # upgrade dies on `type "user_role" already exists`, so the chain is
+    # one-way: a deploy you cannot roll back and then re-apply.
+    #
+    # Found by adding a migration check to CI that runs upgrade, downgrade,
+    # upgrade. The test suite never caught it because conftest builds the
+    # schema from the models with create_all() and never touches Alembic.
+    for enum_name in (
+        "consent_status",
+        "dose_status",
+        "finding_severity",
+        "finding_status",
+        "finding_type",
+        "medication_status",
+        "notification_channel",
+        "notification_status",
+        "recall_match",
+        "schedule_frequency",
+        "user_role",
+    ):
+        op.execute(f"DROP TYPE IF EXISTS {enum_name}")

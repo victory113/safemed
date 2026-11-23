@@ -74,6 +74,22 @@ jobs:
         working-directory: backend
         run: pytest
 
+      # The test suite builds the schema straight from the models with
+      # create_all() and never touches Alembic, so a broken migration used to
+      # pass CI untouched - and a migration nobody can run is a deploy nobody
+      # can do. Adding this found a real one: the initial schema's downgrade
+      # dropped its tables but left eleven ENUM types behind, so the second
+      # upgrade died on `type "user_role" already exists`.
+      #
+      # upgrade / downgrade / upgrade, because a migration that only goes one
+      # way is a deploy you cannot roll back.
+      - name: Migrations apply and reverse cleanly
+        working-directory: backend
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
+
   frontend:
     name: Frontend checks
     runs-on: ubuntu-latest
