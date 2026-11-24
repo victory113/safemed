@@ -29,3 +29,7 @@ Thumbs.db
 backend/celerybeat-schedule
 backend/celerybeat-schedule.*
 backend/celerybeat.pid
+
+# Generated from the Markdown in docs/ by scripts/build_report.py.
+# The Markdown is the source of truth; committing both lets them drift.
+docs/*.pdf
