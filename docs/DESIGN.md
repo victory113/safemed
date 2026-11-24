@@ -265,7 +265,7 @@ sequenceDiagram
         API->>R: update(rxcui)
     else unreachable or no match
         RX-->>API: not found
-        Note over API: medication is kept;<br/>UI shows Checked by name only
+        Note over API: medication is kept, and the UI<br/>shows Checked by name only
     end
     API->>SE: evaluate_patient(patient_id)
     SE->>DB: SELECT interactions for all active meds
