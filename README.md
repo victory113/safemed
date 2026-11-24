@@ -125,7 +125,9 @@ safemed/
 | [docs/DESIGN.md](docs/DESIGN.md) | Architecture and design — module, data, process and scenario views, with diagrams. |
 | [docs/HANDBOOK.md](docs/HANDBOOK.md) | Why the project is built this way, chapter by chapter. Start here to understand the design. |
 | [docs/EVALUATION.md](docs/EVALUATION.md) | What was measured, how, and the threats to validity. |
+| [docs/FINAL_REPORT.md](docs/FINAL_REPORT.md) | The final project report. |
 | [docs/DEMO.md](docs/DEMO.md) | The presentation run sheet. |
+| [docs/SafeMed_Final_Presentation.pptx](docs/SafeMed_Final_Presentation.pptx) | The slide deck, generated from [docs/presentation/build.js](docs/presentation/build.js). |
 | [docs/API_CONTRACT.md](docs/API_CONTRACT.md) | Exact request and response shapes. |
 
 ## Team: start here
