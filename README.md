@@ -121,6 +121,8 @@ safemed/
 
 | | |
 |---|---|
+| [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) | Requirements specification — business, user, functional, non-functional, AI and boundary constraints, with a traceability matrix. |
+| [docs/DESIGN.md](docs/DESIGN.md) | Architecture and design — module, data, process and scenario views, with diagrams. |
 | [docs/HANDBOOK.md](docs/HANDBOOK.md) | Why the project is built this way, chapter by chapter. Start here to understand the design. |
 | [docs/EVALUATION.md](docs/EVALUATION.md) | What was measured, how, and the threats to validity. |
 | [docs/DEMO.md](docs/DEMO.md) | The presentation run sheet. |
