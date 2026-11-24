@@ -265,7 +265,7 @@ sequenceDiagram
         API->>R: update(rxcui)
     else unreachable or no match
         RX-->>API: not found
-        Note over API: medication is kept;<br/>UI shows "Checked by name only"
+        Note over API: medication is kept;<br/>UI shows Checked by name only
     end
     API->>SE: evaluate_patient(patient_id)
     SE->>DB: SELECT interactions for all active meds
@@ -327,10 +327,10 @@ sequenceDiagram
         W->>DB: SELECT medications matching drug
         alt report NDC == patient's NDC
             W->>DB: INSERT finding (CONFIRMED)
-            Note over W: "Recall affects your Metformin"
+            Note over W: Recall affects your Metformin
         else same drug, no product identifier
             W->>DB: INSERT finding (POSSIBLE)
-            Note over W: "May affect — check the label"
+            Note over W: May affect - check the label
         end
     end
     Note over DB: dedupe_key unique —<br/>a repeat run inserts nothing
