@@ -473,37 +473,361 @@ action instead.
 
 ## 9. Challenges and Lessons Learned
 
-> **Note for the team.** This section must be written in your own words. The
-> material below is a set of prompts and the factual record each answer rests
-> on — not prose to submit. You should be able to explain every item here
-> without reference to notes.
+**9.1 The silent failure.** During testing we asked SafeMed about a patient
+taking aspirin and warfarin, a pair DDInter grades Major. The check returned
+nothing. There was no error, no failed request, and nothing in the logs. The
+dashboard rendered a green success panel titled "No safety concerns found",
+with the line "Nothing needs your attention right now."
 
-**9.1 The silent failure.** Aspirin and warfarin returned nothing, with no
-error. Why is a safety check that quietly finds zero more dangerous than one
-that crashes? What did this change about how you test?
+The cause was not a logic error. The name matching compared the medication
+names the patient had entered against the names stored in the interaction
+dataset, and it did that correctly. The problem is that a patient types
+"aspirin" and DDInter stores "Acetylsalicylic acid". The two strings never
+match, so a Major interaction came back as an empty list. What was broken was
+an assumption about the data, not the code acting on it.
 
-**9.2 Choosing data sources under constraint.** The NLM's RxNav interaction
-API was retired in January 2024. How did discovering that early change the
-architecture, and what would have happened had you discovered it in week ten?
+We consider this more dangerous than a crash for three reasons.
 
-**9.3 Coordinating a team of unequal pace.** Work was duplicated at least
-once. What specifically caused it, and what would you do differently from
-week one?
+The first is that the screen is identical. Zero findings because the patient
+is safe and zero findings because the lookup is broken produce the same green
+panel. Nothing in the response distinguishes them.
 
-**9.4 Deciding what *not* to build.** Notifications, per-user time zones and
-an audit review screen were all descoped. How did you decide, and how do you
-defend descoping to someone who asks why a table exists with nothing writing
-to it?
+The second is that nobody has done anything wrong. Both prescriptions are
+correct and the patient takes both as directed. The risk lives in the
+combination, and the one system whose job was to catch combinations reported
+that there was nothing to report.
 
-**9.5 When the tooling was wrong, not the code.** A failing test turned out
-to encode a false assumption. A migration passed CI for weeks because CI
-never ran migrations. What does this suggest about trusting a green build?
+The third is the reason we now think of a silent zero as the worse failure. A
+patient opens SafeMed because they are not certain their medications are safe
+together. Had the check crashed, they would still be uncertain, and that
+uncertainty is what sends someone to a pharmacist. The green panel answers the
+question, so it displaces the one step that would have caught the problem
+without us. A crash fails safely; this did not.
 
-**9.6 The hardest trade.** If the audit write fails, should a caregiver still
-be shown a severe interaction? Argue both sides, then state your choice and
-why.
+It also would not have been found by anyone using the software. A crash
+produces a signal, and signals get reported. This produced none. The patient
+saw green and closed the app, the caregiver saw nothing serious and closed the
+app, and neither had anything to report, because from where they sat nothing
+had happened. We found it only by going to look for it: measuring name
+matching against the full dataset showed 21 of 84 interactions missed, two of
+them severe.
 
----
+The fix was to match on RxNorm identifiers, keeping name matching as a
+fallback for drugs that do not resolve. What changed more lastingly is how we
+write tests. Our fixtures had been passing because we wrote them ourselves, in
+the names we expected, so they confirmed the same assumption that caused the
+bug. The regression test now stores DDInter's own spelling and asserts both
+halves: that name lookup still returns nothing, and that identifier lookup
+finds the severe interaction. Asserting the failure keeps the assumption
+visible, and stops a later reader deleting the identifier matching as
+redundant. More generally, we stopped treating passing examples as evidence of
+coverage. A fixture only tests the case you thought of, so anything
+safety-relevant is now also measured against the real dataset, where a count
+says how large the gap is rather than whether one case works.
+
+**9.2 Choosing data sources under constraint.** Our first plan was to call the
+NLM's RxNav Drug Interaction API. Checking it in week one, before any of the
+safety engine existed, we found it had been retired in January 2024. Only the
+interaction endpoint was withdrawn; RxNorm itself remains available, and
+SafeMed still calls it to turn a typed medication name into an RXCUI.
+
+Losing the endpoint changed the architecture rather than just the supplier.
+Interaction data became something we hold rather than something we ask for:
+DDInter is downloaded as CSVs and imported into our own PostgreSQL, 160,235
+pairs, by `scripts/import_ddinter.py`. Nothing in the running system contacts
+a third party to produce a safety finding.
+
+We then did something that needs defending, because DDInter has not gone
+anywhere. Rather than query it directly from the safety engine, we put an
+interface in front of it - `InteractionSource`, a Protocol with one method -
+and named a replacement we have not built, the ONC high-priority interaction
+list combined with FDA label text. The engine depends on the interface, so a
+second source is a new class and one line of configuration.
+
+Two things justify that. The first is that DDInter being open-access for
+academic use is not the same as being cleared for redistribution in a deployed
+health product; if that distinction ever mattered, it would matter suddenly.
+The second is the stronger one, and it is not a hedge against failure at all.
+Our evaluation states plainly that having a single dataset means we measured
+internal consistency rather than completeness. The only way to address that is
+to run a second source alongside the first and compare them. Behind the
+interface, that is an addition. With DDInter's queries spread through the
+safety engine, it would be a rewrite, and we would be choosing between a known
+gap in our safety claims and work we do not have time for.
+
+If this looks like speculative over-engineering, the answer is that we were not
+speculating. A data source had already been withdrawn from this project, in
+week one, and the body that withdrew it was the US National Library of
+Medicine - the institution maintaining the country's standard drug vocabulary.
+An open-access dataset maintained by a research group is not a safer bet than
+that. The interface costs about twenty lines and no inheritance, which is a
+small price against a risk we had already watched arrive once.
+
+Discovering the same thing in week ten would have been materially worse, and
+not only because of the time. By then the local-data architecture would not
+exist: no `drug_interactions` table, since the table exists precisely because
+the data lives with us, no import pipeline, and no dataset to evaluate
+against. We would have built all of it in the last fortnight.
+
+The specific consequence is worth stating, because it cuts against us. The
+retired endpoint took identifiers, so the live-API design has no name-matching
+step and the failure described in 9.1 could not occur in it. Name matching is
+a cost of holding the data ourselves. Building the import under week-ten
+pressure would have introduced that failure mode for the first time with no
+time left to measure across the dataset - so the bug we are most pleased to
+have caught is the one we would have shipped. The decision that created the
+problem also created the only instrument that found it, and we needed the nine
+intervening weeks to use it.
+
+The habit that came out of this outlasted the specific choice. Any external
+service may degrade a feature and must never block a core operation. RxNorm is
+somebody else's server, so a failed lookup returns no match instead of
+raising: the medication still saves with `rxcui = None` and the safety engine
+falls back to name matching for that entry. The AI explanation layer follows
+the same rule. Losing RxNav did not just cost us a supplier; it told us what
+to assume about everyone else's.
+
+**9.3 Coordinating a team of unequal pace.** The clearest instance is datable
+to the hour. On 19 November, Pacifique branched from main at 12:32 and
+committed `frontend/src/api/client.ts` at 16:00, fifty-one lines, alongside
+`auth.ts` and changes to the sign-in form. At 19:38 the same evening, Victory
+committed `frontend/src/api/client.ts` as well, a hundred and seventy-six
+lines, as part of wiring the dashboard. Both commits create the same file from
+nothing, which is why the branch would not merge: the conflict was add against
+add rather than an ordinary overlap.
+
+It matters that Pacifique committed first. The convenient account is that his
+branch duplicated work already in main, and the timestamps refuse it - at
+16:00 there was nothing to duplicate, because the file did not exist. Victory's
+version is the one that survived, and it survived on merit, with session
+handling and error paths the shorter version did not have. That is not a
+process defence.
+
+Each of us contributed a different half of the failure. His work was invisible
+because it stayed on an unpushed local branch for hours. Victory's was
+unannounced because it went to main directly, so even a pushed branch would
+have gone unnoticed without someone choosing to look. Neither of us had any
+obligation to look.
+
+The deeper cause is in how the two tasks were worded. One was "connect the
+account forms to the API"; the other was "wire the frontend to the API and add
+the patient dashboard." Those are the same sentence written twice, and neither
+names a file. Two people can satisfy two differently worded outcomes by
+writing the same module, and discussion cannot reliably prevent it, because
+spotting the overlap requires both people to have imagined the same
+implementation in advance.
+
+The section title is "unequal pace," and the record does not support reading
+that as the slower members being the problem. On 19 November one of us merged
+three feature branches and then committed the safety engine, FDA recall
+monitoring, the Celery worker, the AI explanation layer, the frontend wiring,
+the patient dashboard, the caregiver view, consent controls, five handbook
+chapters, the evaluation script and the demo script. Against that rate,
+collision is arithmetic rather than misfortune: anyone working in parallel
+stands in territory about to be built over, and their own speed has no bearing
+on it. Velocity concentrated into unannounced bursts is what makes the overlap
+window wide, so the burden of announcing belongs with whoever is generating it.
+
+What we did after the collision is the part we would repeat. The branch was
+reviewed rather than discarded, and seven changes from it are in main across
+two commits that credit him as co-author: a 401 that only clears the token
+when it is still the one that request sent, so a slow response cannot destroy
+a newer session; a ref-based double-submit guard, because `setState` is not
+synchronous and a fast double-tap could create two accounts; a committed
+`.env.example`; a 500 that shows "SafeMed is temporarily unavailable" instead
+of the server's own detail; and three smaller corrections to error wording and
+request headers. Rebuilding work is a waste. Throwing away the judgment inside
+it is a larger one.
+
+The same root cause appeared in a second form that took nine days to notice.
+`tests/auth-validation.test.mjs` was committed on 10 November with five
+passing tests, and nothing in the project ran it, because there was no `npm
+test` script. Work existed and no one could see it - not hidden, just outside
+the view of every mechanism we had.
+
+From week one we would change four things, and each is a mechanism rather than
+an intention, because a three-person team fitting this around coursework will
+not sustain anything that depends on everyone remembering. Tasks would be
+assigned by directory rather than by outcome, so a boundary violation is
+visible in a diff before it merges and could be enforced with CODEOWNERS.
+Branches would be pushed daily even when incomplete, on the rule that
+unpushed work does not exist. An issue would be claimed on the board before
+its first commit, which is a thing the board could have done for us from the
+start and did not. And whoever is about to commit a large amount of work would
+say which directories it touches first, since that cost falls on the person
+best able to pay it.
+
+**9.4 Deciding what *not* to build.** Three things were cut: email and SMS
+notification, per-user time zones, and a screen for reading the audit log.
+All three are declared in the requirements specification under "Requirements
+Deliberately Not Met," with the reason for each, rather than left for a reader
+to discover.
+
+The rule we applied, stated as what we refused rather than what we allowed,
+was that nothing could be cut if it changed what the system is able to claim
+about safety. The things protected when time ran short - the audit log, RXCUI
+matching, consent enforcement, the guardrails on the AI layer - each determine
+whether a finding is correct, whether it is complete, or whether the person
+reading it is entitled to see it. The three that went are layers sitting
+on top of determinations already made and tested. Notification re-delivers
+findings the caregiver dashboard already shows, which is why UR-06, "see only
+the serious alerts for someone who invited me," is satisfied without it. Per-user time
+zones restyle a schedule already computed correctly. A review screen reads
+records that are already written, already immutable and already queryable.
+None of the three changes what SafeMed knows; they change how conveniently it
+is conveyed.
+
+A second rule came out of the time zone decision, and it is the same principle
+as 9.1 applied to scope rather than to code. We could have displayed local
+times without knowing any user's zone, which shows a confident and wrong hour.
+Instead the interface displays UTC, which is correct and inconvenient.
+Descoping may make a system less convenient. It may not make it quietly
+incorrect.
+
+The visible residue is one table. `notifications` exists, with its channel and
+status enums, and nothing writes a row to it. The useful question is not why it
+is still there but why it was ever created, and the answer is that it is in the
+initial migration, `c7cbadec06cf`, written in week one alongside every other
+table. The schema was therefore a forecast of the system rather than a record
+of it, and a forecast is wrong in places. Dead schema is what that error looks
+like six weeks later. Had the data model been grown alongside the code, the
+table would never have been created, and the thing we would defend is a
+decision not to add it rather than a decision not to remove it.
+
+We chose to leave it. Removing it is a ten-line migration and CI now proves
+migrations reverse cleanly, so the work is not the obstacle; the objection is
+that it is a schema change made days before a demonstration, in the one area
+of this project that has already failed once, for a benefit that is entirely
+cosmetic. The table costs a row in a limitations table we have written anyway.
+It is also, read correctly, more informative than a clean schema would be: it
+records where the week-one plan and the delivered system part company, and we
+would rather explain that than hide it.
+
+Nothing in the traceability matrix is unmet. Notification was never a numbered
+functional requirement, and FR-28 through FR-34, which cover the audit, all
+pass. What was lost is a second delivery channel and some convenience. What
+was kept is every claim the system makes about a patient's safety.
+
+**9.5 When the tooling was wrong, not the code.** A passing suite licenses one
+belief: that the assertions we wrote held, on the setup our harness built.
+Both halves of that matter, and three incidents in this project are the same
+error seen from different sides.
+
+The first is that CI was green for weeks while the deployment path was broken.
+The test suite constructs its schema from the SQLAlchemy models with
+`create_all()` and never invokes Alembic at all. So the application was tested
+and the thing that installs it never was, and a migration nobody could run
+passed every check we had. This is not a coverage gap that more tests of the
+same kind would have closed: every test in the suite, including any migration
+test we might have written, ran against a schema Alembic had not produced. The
+tests were not insufficient. They were exercising a different artifact than a
+deployment uses.
+
+Adding a single CI step found a real defect the same day. The initial schema's
+`downgrade()` dropped its tables and left all eleven PostgreSQL ENUM types in
+place, because Alembic's autogenerate creates enum types and never writes the
+code to drop them. After any downgrade, the next upgrade died on `type
+"user_role" already exists`. The chain was one-way: a deploy could be rolled
+back but never re-applied, and the moment that becomes apparent is the moment
+you are already rolling back. A detail worth recording is that Alembic's own
+generated stub contained the words "please adjust!" - a tool stating in writing
+that it had left work unfinished, in a file we read and committed.
+
+The second incident is a test that failed while being correct. An ordering
+assertion on `audit_events` failed, and the comfortable reading was a flaky
+test. PostgreSQL's `now()` returns the transaction start time and is identical
+for every statement inside that transaction, so two rows written during one
+request shared a timestamp and their order could not be recovered afterwards.
+Confirmed directly in psql: `now()` returned the same value twice while
+`clock_timestamp()` advanced fifty-four milliseconds. The false assumption was
+ours, not the test's, and no amount of reasoning about the code would have
+surfaced it, because the code did exactly what we believed `now()` meant.
+
+The third points the other way. An audit isolation test failed because a
+`rollback()` on the read path discarded the shared transaction the test
+fixtures lived in. The production behaviour was defensible and the harness had
+manufactured the failure. We still changed the production code, to write
+inside a SAVEPOINT via `begin_nested()`, but on production grounds rather than
+test grounds: a failed flush otherwise leaves the whole session unusable, and
+the route has further queries to run, so the failure would have surfaced in the
+next query rather than where it happened. A test artefact had pointed at a real
+design question.
+
+Taken together these say that a build result is evidence about what the harness
+exercised. Green misleads when the harness differs from production; red
+misleads in exactly the same way, and neither direction can be trusted without
+knowing what was actually run. The useful question was never whether the build
+is green but which artifact it ran against. A related case appears in 9.3:
+five auth validation tests sat in the repository for nine days passing nothing,
+because no script ran them. A suite can be green partly because some of it does
+not execute.
+
+What changed is that CI now runs `alembic upgrade head`, `downgrade base`
+and `upgrade head` again on every push, against the `safemed` database,
+which nothing else in CI touches - the suite runs against `safemed_test`.
+The deployment path is now something the build checks rather than something
+we assume.
+
+**9.6 The hardest trade.** The system treats the two paths differently. A
+write goes through `record_event`, which flushes the audit row into the
+caller's own transaction, so a consent change that cannot be audited does not
+happen at all. A read goes through `try_record_event`, which writes inside a
+SAVEPOINT and never raises: if the audit write fails, the caregiver is still
+shown the finding and the failure is written to the application log. This is
+the only place in SafeMed where something happens without a guaranteed audit
+row, and it is deliberate.
+
+The case for refusing the read is stronger than it first appears. An audit
+log's value is its completeness, and a log with unknown gaps supports a claim -
+that we can show who read what - which has become false in ways we cannot
+enumerate. Under HIPAA an unauditable disclosure is a violation whatever the
+motive, so "we judged the read more important" is not a defence available to a
+covered entity. The rule also reads badly stated plainly: if the audit write
+fails, proceed anyway. Anyone able to induce audit failures has been handed a
+way to turn an availability fault into unlogged access. And the system is now
+internally inconsistent, strict on writes and permissive on reads about the
+same log, and an exception is where defects tend to live.
+
+The hardest objection is one we have evidence for from our own project. Our
+defence is that the failure is loud: `logger.exception` records in plain words
+that an unaudited read has happened. But "loud" is a claim about human
+behaviour, not a property of the system, and section 9.5 is evidence against
+it. Alembic wrote "please adjust!" into a migration we read and committed, and
+that warning sat unacted on for weeks until a CI step exposed the defect it
+was describing. With three people, no log aggregation, no alerting and nobody
+on call, the reader that makes the mitigation work is hypothetical. The log
+line is the right thing to write and it is not a control.
+
+The case for serving the read rests on what the read is. It is the safety
+function itself. Refusing it means a caregiver is not shown that someone has a
+severe interaction because a logging subsystem had a fault, which makes the
+patient pay for an infrastructure failure. The audit log exists to protect that
+patient, and declining to inform their caregiver in its name inverts the
+purpose it was built for.
+
+The attack is also narrower than it sounds, and this is the strongest point in
+favour of the choice. Authorization and auditing are separate steps:
+`require_active_grant` checks the consent grant whether or not the audit write
+succeeds. Breaking the audit writer costs the record of an authorized access;
+it does not produce access. The attacker still needs a valid, patient-granted
+consent grant, which is what they needed before. The failure degrades
+accountability, not confidentiality. A write is not comparable: it alters the
+record and leaves no other trace, which is why writes keep the strict rule.
+
+Our choice is to serve the read, keep writes strict, and declare the asymmetry
+in the README and the requirements specification rather than let it be
+discovered. We think it is correct for what this system is - a student project
+on synthetic data, where the cost of a withheld severe interaction during a
+demonstration exceeds the cost of a missing log row. We do not think it is
+correct in general, and the code says so in the docstring: a system under a
+real regulatory obligation would refuse the read.
+
+Two changes would reverse the decision, and naming them is the honest way to
+hold it. Centralised logging with alerting would make "loud" a property of the
+system rather than an aspiration, at which point serving the read costs
+nothing. And a genuine regulatory obligation would make an unauditable
+disclosure unacceptable regardless of the clinical cost, which is the position
+a hospital is actually in and we are not.
 
 ## 10. Limitations and Future Work
 
