@@ -1554,19 +1554,46 @@ SafeMed runs under Docker Compose and has never been deployed to a hosted enviro
 
 The honest version of the claim is narrow and worth getting exactly right: *part of the deployment path is tested, and none of it has been exercised against real infrastructure.* Migrations apply and reverse on every push, and the whole system starts from `docker compose up` on a machine that has never seen it. What has not been proven is anything involving a hostname, a certificate, a managed database, secrets handling outside a local `.env`, or the behaviour of any of it under concurrent real users.
 
-And there is one more gap of exactly the kind this chapter is about, found while writing this chapter and left open deliberately so you can see it:
-
-**CI does not build the Dockerfile.** Look at the workflow. It installs Python on the runner with `setup-python` and runs `pytest` against a PostgreSQL service container. There is no `docker build` in it anywhere. So `backend/Dockerfile` is a third artifact nothing checks — break it, and CI stays green while `docker compose up` fails on every machine including yours.
-
-That is the same mistake as section 13.1, one layer out. Having found it once and named the principle, we then did not apply the principle to the next artifact along. Which is worth saying out loud, because the lesson of 13.1 is not "test your migrations." It is:
-
-> **Ask what artifact your green build actually exercised, and name the ones it did not.** That question has to be asked repeatedly, because the answer changes every time you add a way of building or shipping the thing.
-
-The fix is three lines in the workflow and is not in this repository. Decide whether to add it before you present, and if you do not, say it is open — which is cheaper than being asked.
-
 Those are not small. Claiming "it works in Docker, so it would work deployed" is the kind of sentence that gets taken apart in a question, and the narrower claim is both true and defensible.
 
-### 13.7 Try these yourself
+And there was one more gap of exactly the kind this chapter is about, found while writing this chapter:
+
+**CI did not build the Dockerfile.** The backend job installs Python on the runner with `setup-python` and runs `pytest` against a PostgreSQL service container. There was no `docker build` in the workflow anywhere. So `backend/Dockerfile` was a third artifact nothing checked — break it, and CI stayed green while `docker compose up` failed on every machine including this one.
+
+That is the same mistake as section 13.1, one layer out. Having found it once and named the principle, we then failed to apply the principle to the next artifact along. Which is worth saying out loud, because the lesson of 13.1 is not "test your migrations." It is:
+
+> **Ask which artifact your green build actually exercised, and name the ones it did not.** That question has to be asked repeatedly, because the answer changes every time you add a way of building or shipping the thing.
+
+### 13.7 Testing the deploy path, and the mount that hides it
+
+The `deploy-path` job closes that gap. It deliberately follows the path the README gives a contributor rather than a convenient approximation: copy `.env.example`, generate a `SECRET_KEY`, `docker compose build`, `docker compose up -d`, then prove the thing serves traffic. It fails if the template's placeholder key survives, if any of the five services is not running, or if `/health` does not answer inside sixty seconds — and dumps `compose ps` and the container logs when it does fail, because a CI failure nobody can diagnose from the log is a CI failure people learn to ignore.
+
+One step in it is not obvious, and it is the interesting part of the whole job.
+
+```yaml
+- name: The image contains a working application
+  run: |
+    docker build -t safemed-api:ci ./backend
+    docker run --rm -e SECRET_KEY=... -e DATABASE_URL=... \
+      safemed-api:ci python -c "import app.main; print('import ok')"
+```
+
+Why build and run the image separately, when the job is about to start the whole stack anyway? Because of this, in `docker-compose.yml`:
+
+```yaml
+volumes:
+  - ./backend:/app        # live code reload during development
+```
+
+That mount puts the host's source directory on top of `/app` at runtime, which is what makes editing a file reload the server without rebuilding. It also means **the image's own copy of the code is masked.** The container runs the host's files, not the ones the Dockerfile copied in.
+
+So `docker compose up` proves the image's *dependencies* are right. It cannot prove the image's *code* is there at all. A `Dockerfile` that forgot `COPY . .` would pass the compose check and then fail on any machine without the source tree sitting next to it — which is every machine you would actually deploy to.
+
+Running the bare image with no mount is the only step in this repository that tests what ships.
+
+> **A convenience that makes development pleasant can also make a test meaningless.** The live-reload mount is worth having. It is also the reason one of these two checks is not enough.
+
+### 13.8 Try these yourself
 
 1. **Break the chain again and watch CI catch it.** On a branch, remove the enum drops from the initial migration's `downgrade()` and push. The migration step fails with the exact error above. That is what a regression test for infrastructure looks like.
 2. **Run the three commands by hand, against a throwaway database.** Never against your development one — the downgrade deletes everything. Create `safemed_scratch`, point `DATABASE_URL` at it, and run them. Then check that a downgrade left no enum types behind:
@@ -1574,6 +1601,14 @@ Those are not small. Claiming "it works in Docker, so it would work deployed" is
    docker compose exec db psql -U safemed -d safemed_scratch -c "\dT"
    ```
 3. **Read a generated migration before committing it.** Autogenerate one for a trivial model change and read every line. Find at least one thing it got wrong or left out. There usually is one.
+4. **Prove the mount really does mask the image.** Build the image, then run it twice — once as compose does and once bare — and look at the difference:
+   ```bash
+   docker build -t safemed-try ./backend
+   docker run --rm safemed-try ls /app/app/main.py
+   docker run --rm -v "$PWD/backend:/app" safemed-try ls /app/app/main.py
+   ```
+   Both find the file, which is the point: the second one found the *host's* copy. Now delete `COPY . .` from a scratch copy of the Dockerfile and run both again. The bare run fails; the mounted one still passes. That is the failure the `deploy-path` job's bare-image step exists to catch, and it is worth seeing once.
+5. **Make the deploy-path job fail on purpose.** Change the health URL in the workflow to a path that does not exist and push to a branch. Read the failure output. If you cannot tell from the log what went wrong, the step needs more diagnostics — that judgement is the whole reason it dumps `compose ps` and the container logs.
 
 ---
 
@@ -1698,5 +1733,6 @@ None of those are in the feature list. All of them are things you can now explai
 | **Reversible migration** | One whose downgrade leaves the database in a state the upgrade can be applied to again. Proved by upgrade / downgrade / upgrade, where the second upgrade is the one that matters |
 | **Build artifact** | A file generated from a source and never edited directly - our PDF, which is git-ignored so nobody is tempted |
 | **CODEOWNERS** | A GitHub file mapping paths to the people who must review changes to them - how task-by-directory gets enforced instead of remembered |
+| **Bind mount** | A host directory placed over a path inside a container. Gives live reload, and masks the image's own copy of whatever is underneath - which is why the image has to be tested without one |
 
 ---
