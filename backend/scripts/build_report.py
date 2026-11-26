@@ -89,14 +89,47 @@ def transform(md_text: str) -> str:
     for bad, good in (
         ("→", "->"),   # →
         ("←", "<-"),   # ←
+        ("↑", "^"),    # ↑
+        ("↓", "v"),    # ↓
         ("✓", "yes"),  # ✓
         ("✗", "no"),   # ✗
         ("≤", "<="),   # ≤
         ("≥", ">="),   # ≥
         ("×", "x"),    # ×
+        # Box drawing and solid arrowheads, used by the ASCII diagrams in the
+        # handbook. Mapped to the nearest ASCII so the diagram stays readable
+        # rather than becoming a grid of blank boxes.
+        ("─", "-"), ("│", "|"), ("┌", "+"), ("┐", "+"),
+        ("└", "+"), ("┘", "+"), ("├", "+"), ("┤", "+"),
+        ("┬", "+"), ("┴", "+"), ("┼", "+"),
+        ("►", ">"), ("◄", "<"), ("▲", "^"), ("▼", "v"),
+        ("•", "-"),
     ):
         md_text = md_text.replace(bad, good)
     return md_text
+
+
+def warn_about_missing_glyphs(md_text: str, stem: str) -> None:
+    """Name every character the PDF fonts cannot draw, loudly.
+
+    The table above will always be one character behind the next document.
+    The failure it guards against is silent - a glyph the base-14 fonts lack
+    becomes a blank box, and nobody notices until the thing has been handed
+    in. So rather than trust the table to be complete, ask the encoding
+    itself which characters survive, and say which ones do not.
+    """
+    missing: dict[str, int] = {}
+    for char in md_text:
+        try:
+            char.encode("cp1252")  # what the base-14 fonts actually cover
+        except UnicodeEncodeError:
+            missing[char] = missing.get(char, 0) + 1
+    if not missing:
+        return
+    print(f"WARNING: {stem}.md has characters the PDF fonts cannot draw.")
+    print("         They will appear as blank boxes. Add them to transform().")
+    for char, count in sorted(missing.items()):
+        print(f"         U+{ord(char):04X}  {char!r}  x{count}")
 
 
 def build(stem: str) -> Path:
@@ -104,8 +137,11 @@ def build(stem: str) -> Path:
     if not source.exists():
         raise SystemExit(f"No such document: {source}")
 
+    transformed = transform(source.read_text(encoding="utf-8"))
+    warn_about_missing_glyphs(transformed, stem)
+
     html_body = markdown.markdown(
-        transform(source.read_text(encoding="utf-8")),
+        transformed,
         extensions=["tables", "fenced_code", "sane_lists"],
     )
     html = (
