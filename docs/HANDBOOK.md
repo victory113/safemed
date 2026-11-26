@@ -6,7 +6,7 @@ A study companion to the SafeMed capstone project.
 
 **How it grows:** one chapter per stage of the project. Chapters appear as we build the thing they describe, so nothing here is theory you haven't touched.
 
-**Where it lives:** this file moves into the repository at `docs/HANDBOOK.md` once the repo exists, so it is version-controlled alongside the code it describes.
+**Where it lives:** `docs/HANDBOOK.md`, in the repository, version-controlled alongside the code it describes. Chapters 1-10 were written as the system was built; 11-14 cover the documenting, deploying and shipping stages that came after.
 
 ---
 
@@ -1330,6 +1330,329 @@ Stated here so you state it first:
 
 ---
 
+## Chapter 11 — Requirements, and Proving You Met Them
+
+Everything up to here was about building. This chapter is about the document that says what you were supposed to build, and the harder question of how anyone knows you did. It describes `docs/REQUIREMENTS.md`.
+
+### 11.1 Why requirements come in layers
+
+A requirement like "the system should keep patients safe" cannot be built or checked. A requirement like "`POST /medications` returns 201" can be checked but says nothing about why it exists. Neither is enough alone, so requirements are written in layers, each answering a different question.
+
+| Layer | Answers | Example from SafeMed |
+|---|---|---|
+| **BR** — business | Why does this project exist? | BR-03: a patient's family can help without the patient losing control |
+| **UR** — user | What does a person want to do? | UR-06: as a caregiver, see only the serious alerts for someone who invited me |
+| **FR** — functional | What must the software do? | FR-29: record every occasion on which a caregiver reads a patient's record |
+
+Read downward it is a justification: this endpoint exists because this user needs this, because the business promised that. Read upward it is a test of completeness — if a UR has no FR beneath it, nothing was built for it; if an FR has no UR above it, you built something nobody asked for. Both happen, and the layering is how you notice.
+
+### 11.2 The four kinds in this document
+
+SafeMed's specification has FRs and three other sets, because three things mattered here that a functional requirement cannot express.
+
+- **FR-01 to FR-37** — things the system does. Each is one sentence containing "shall" and exactly one claim.
+- **NFR-01 to NFR-11** — how well, rather than what. Response times, degradation behaviour, accessibility.
+- **AIR-01 to AIR-05** — constraints on the AI layer specifically. These exist because the riskiest part of this project is the one a functional requirement would blandly describe as "explains a finding."
+- **BC-01 to BC-03** — boundary constraints. Things the system must *never* do: diagnose, prescribe, or tell anyone to change a medication.
+
+That last group is worth noticing as document design. A prohibition is not a feature, so it does not belong in the FR list — and yet the entire safety argument of this project rests on a requirement whose whole content is "do not."
+
+### 11.3 How to write a requirement that can be checked
+
+Three habits, all visible in the document.
+
+**One claim per requirement.** FR-31 says a medication change shall be recorded *and* that a modification shall record which fields changed rather than their values. That is close to the limit. A requirement that can half-pass cannot be marked pass or fail, which is the only thing a requirement is for.
+
+**"Shall", never "should" or "will".** "Should" invites an argument about whether it was really important. In a specification, "shall" means mandatory, and nothing else does.
+
+**No implementation.** FR-30 says a refused attempt shall be recorded under an action distinct from a successful read. It does not say `patient_record.access_denied`, because that name is a design decision and the requirement has to outlive it.
+
+### 11.4 Traceability, and what it is actually for
+
+Section 8.1 maps business requirements to user requirements to functional requirements. It looks like bureaucracy. It does one thing nothing else does: it answers *"if we cut this, what breaks?"*
+
+Look at the BR-02 row:
+
+```
+| BR-02 | UR-03 | FR-13...FR-16 |
+```
+
+Four functional requirements, one user requirement, one business reason. If recall monitoring had to be cut, that row tells you immediately that exactly one user-facing promise disappears with it, and which one. Without the table you would be reading thirty-seven requirements under time pressure trying to work out what depended on what — which is precisely when you get it wrong.
+
+### 11.5 The column that makes it real
+
+A specification that only lists requirements is a wish list. What makes this one checkable is that every functional requirement names the automated test that demonstrates it:
+
+```
+| FR-30 | The system shall record every refused attempt to read a patient's
+          record, under an action distinct from a successful read.
+        | test_audit_resilience.py::test_a_refused_attempt_is_recorded_under_its_own_action |
+```
+
+That third column changes the character of the document. "We met FR-30" stops being a claim and becomes a command anyone in the room can run. It also keeps the document honest: delete that test and CI stays green, but the specification now cites a test that does not exist, and the next person to check finds out.
+
+Section 8.2 totals it by area — 194 automated tests across eight areas, every one run by CI on every push.
+
+> **A requirement with no test is an intention.** The test is what converts it into something you can demonstrate rather than assert.
+
+### 11.6 The section most specifications do not have
+
+Section 9 is titled **Requirements Deliberately Not Met**. It lists six gaps with a reason for each: no interface for reading the audit log, schedules in UTC with no per-user time zones, a single interaction dataset, read-path audit failures tolerated, nothing deployed to a hosted environment, and the unused `notifications` table.
+
+Writing that section is uncomfortable, and it is the most defensible thing in the document. Two reasons.
+
+Every one of those gaps is findable by anyone who looks for twenty minutes. The only question is whether they hear it from you or discover it themselves, and those two produce very different impressions of the same project.
+
+The subtler reason: naming a gap proves you understand your own system. "The `notifications` table is unused" is a sentence you can only write if you went looking for the difference between what you planned and what you built. Someone who cannot write that section does not know which of the two they are holding.
+
+### 11.7 What this document does not do
+
+- **It was written after most of the code.** An honest specification is written first and amended as reality intervenes. This one largely documents decisions already made, which makes it accurate but means it did not shape the build the way a specification is supposed to.
+- **The NFRs are mostly unmeasured.** Response-time targets are stated and not benchmarked. An NFR you have not measured is an aspiration with a number attached to it.
+- **Acceptance criteria and tests are the same thing here.** For a project this size that is defensible. On a larger one the people writing acceptance criteria are deliberately not the people writing the tests, and that separation is the entire point of having both.
+
+### 11.8 Try these yourself
+
+1. **Follow one requirement all the way down.** Start at BR-03, find its URs in section 3, find UR-06's FRs, pick FR-29, and run the test it names. Five minutes, and you will never again be caught by "how do you know you met your requirements?"
+2. **Break the traceability on purpose.** Pick an FR, imagine deleting that feature, and use the 8.1 table to list everything that falls over. Then check whether the table was right.
+3. **Find a requirement you cannot test.** Go through the NFRs and identify the ones with no automated check. Decide for each whether that is acceptable and why. That is the exact question you will be asked.
+
+---
+
+## Chapter 12 — Design Documents, and Who They Are For
+
+`docs/DESIGN.md` is the other half of chapter 11. Requirements say what the system must do. Design says how it is arranged so that it can.
+
+### 12.1 Four views, because there are four questions
+
+One diagram of a whole system is unreadable, so the document gives four views, each answering one question for one audience.
+
+| View | Question | Diagram |
+|---|---|---|
+| **Logical** | What are the parts, and what may call what? | module dependency graph |
+| **Data** | What is stored, and how is it related? | entity-relationship diagram |
+| **Process** | What is running, and what talks to what at runtime? | container and process diagram |
+| **Scenario** | What actually happens when someone does X? | three sequence diagrams |
+
+The scenario view is the one people skip and the one most worth having. A reviewer's real question is almost never "what are the modules." It is "what happens when a caregiver opens that page," and a sequence diagram answers that in ten seconds where prose takes a paragraph.
+
+### 12.2 Why the diagrams are text, not pictures
+
+Every diagram in `DESIGN.md` is a Mermaid code block — text that GitHub renders into a picture when the file is viewed.
+
+This matters more than it sounds. A diagram drawn in a tool and exported as a PNG is a binary blob: git cannot diff it, nobody can edit it without the original file, and it goes stale silently the moment the code changes. A Mermaid block sits in the same file as its explanation, shows up in a pull-request diff as readable lines, and can be corrected by anyone with a text editor.
+
+The trade is real — you get much less control over layout, and you depend on someone else's renderer. For a document whose job is to stay true to the code, that is the right trade.
+
+### 12.3 Reading the module diagram: dependency direction
+
+The logical view is not merely a map of the modules. It records a rule about which way dependencies may point. Section 2.1 calls it enforced dependency direction: API may call services, services may call repositories, and nothing points back up.
+
+The reason is the one from chapter 5. If a service imported from the API layer, testing the safety engine would require an HTTP request, and the engine would be unusable from the Celery worker, which has no HTTP layer at all. The arrows in that diagram are why the same safety engine runs unchanged inside a web request and inside a background job.
+
+### 12.4 Reading the ER diagram
+
+The entity-relationship diagram shows the tables and how they relate, and section 3.1 highlights three decisions visible in the shape rather than in any single column.
+
+One thing worth learning to spot: this diagram shows `notifications` related to `safety_findings`, and nothing writes to it. The diagram is accurate about the schema and misleading about the system — which is exactly the gap chapter 11's section 9 exists to close.
+
+> **A design document describes structure. Only the requirements document can tell you whether that structure is used.**
+
+### 12.5 Two Mermaid traps that cost real time
+
+Both of these broke the diagrams in this project, and both took a while to find, because a Mermaid syntax error renders as blank space rather than an error message.
+
+**Quotes inside a `Note` line.** `Note over A,B: he said "hello"` breaks the parser. Fixed in commit `5953b63`.
+
+**A semicolon.** In Mermaid, `;` ends a statement. A semicolon used as ordinary English punctuation inside a label truncates it or kills the whole block. Fixed in `8dc10cd`.
+
+And a third problem that is not a syntax error at all: **GitHub caches the rendered diagram.** After fixing one, the file can still display the broken version. Open it at its commit-pinned URL — `/blob/<sha>/docs/DESIGN.md` — to see what your fix actually produced rather than what the cache remembers. At least once in this project, a diagram that looked broken had already been fixed.
+
+### 12.6 Design-level verification
+
+Section 8 does something the diagrams cannot: it states which design decisions are enforced by a test rather than by discipline. The dependency direction, the audit guards, the degradation behaviour — each is either checked automatically or it is a convention that lasts until someone who has not read the document touches it.
+
+This is chapter 11.5 one level up. A design decision nothing enforces is a decision with an expiry date you cannot see.
+
+### 12.7 Try these yourself
+
+1. **Break a diagram deliberately.** Put a semicolon inside a Mermaid label in a scratch branch, push it, and look at the rendered file. Learning what a Mermaid failure looks like is worth more than being told about it.
+2. **Trace a sequence diagram against the code.** Take section 5.2, the caregiver read, and follow each arrow to the function that performs it. If the diagram and the code disagree, the diagram is wrong — fix it.
+3. **Find the dependency rule's teeth.** Add an import from a service module back up to the API layer and run the suite. Whether anything stops you is the answer to whether that rule is enforced or merely written down.
+
+---
+
+## Chapter 13 — Deployment, Migrations, and the Build You Could Not Trust
+
+Chapter 9 was about tests and the build that runs them. This chapter is about the thing chapter 9 missed for several weeks, which is a better lesson than anything chapter 9 got right.
+
+### 13.1 The gap
+
+CI ran on every push. It was green for weeks. It told you nothing whatsoever about whether the application could be installed.
+
+Here is the mechanism, and it is one line. The test suite builds its database schema directly from the SQLAlchemy models:
+
+```python
+Base.metadata.drop_all(eng)
+Base.metadata.create_all(eng)
+```
+
+Alembic — the tool that actually builds the schema when you deploy — was never invoked. So every test in the suite, including any migration test you might have written, ran against a schema Alembic had not produced.
+
+This is not a coverage gap you could close by writing more tests of the same kind. The tests were not insufficient; they were exercising a different artifact than a deployment uses.
+
+> **A migration nobody can run is a deploy nobody can do.** And nothing about a green application test suite reveals it.
+
+### 13.2 Two ways to build a schema, and why having both is a trap
+
+| | `create_all()` | Alembic |
+|---|---|---|
+| Builds from | the models, as they are right now | an ordered chain of migration scripts |
+| Used by | the test suite | every real deployment |
+| Knows about history | nothing | everything |
+
+Having both is legitimate — `create_all()` is fast, which matters when the suite runs on every push. The trap is that the two can disagree indefinitely without any symptom, because the only thing that would reveal the disagreement is running the one you are not running.
+
+### 13.3 What the check found the same day
+
+Adding one CI step found a real defect immediately. The initial migration's `downgrade()` dropped its tables and left all eleven PostgreSQL ENUM types in place, because Alembic's autogenerate creates enum types and never writes the code to drop them.
+
+The consequence: after any downgrade, the next upgrade died.
+
+```
+sqlalchemy.exc.ProgrammingError: type "user_role" already exists
+```
+
+And the detail that is worth more than the bug: **Alembic's own generated stub contained the words "please adjust!"** A tool stated in writing that it had left work unfinished, in a file that was read, committed, and reviewed. Generated code is a first draft with a note attached, and the note is usually accurate.
+
+### 13.4 Why one-way is worse than broken
+
+A migration that fails outright is an inconvenience — you find out at once and fix it. A migration chain that applies forward but cannot be re-applied after a rollback is worse, because of *when* you discover it.
+
+You discover it while rolling back. Which is to say: at the one moment you are already dealing with a problem, under pressure, with the production system in a state you did not choose. The failure mode is not "the deploy breaks." It is "the escape hatch breaks, on the way out."
+
+### 13.5 Reversibility as a rule, with teeth
+
+Two things changed. `downgrade()` now drops the types it created. And CI runs this on every push:
+
+```yaml
+- name: Migrations apply and reverse cleanly
+  working-directory: backend
+  run: |
+    alembic upgrade head
+    alembic downgrade base
+    alembic upgrade head
+```
+
+Three commands, in that order, deliberately. Upgrade proves it installs. Downgrade proves it can be rolled back. **The second upgrade is the one that matters** — it proves the rollback left the database in a state the migration can be applied to again, which is the property that was broken.
+
+Note which database it runs against. The suite uses `safemed_test`; this step uses `safemed`, which nothing else in CI touches. The check needs a database whose state it controls completely, and the test database is not that.
+
+### 13.6 What "not deployed" means, and why we say it
+
+SafeMed runs under Docker Compose and has never been deployed to a hosted environment. That is listed as a gap in the requirements specification rather than left to be noticed.
+
+The honest version of the claim is narrow and worth getting exactly right: *part of the deployment path is tested, and none of it has been exercised against real infrastructure.* Migrations apply and reverse on every push, and the whole system starts from `docker compose up` on a machine that has never seen it. What has not been proven is anything involving a hostname, a certificate, a managed database, secrets handling outside a local `.env`, or the behaviour of any of it under concurrent real users.
+
+And there is one more gap of exactly the kind this chapter is about, found while writing this chapter and left open deliberately so you can see it:
+
+**CI does not build the Dockerfile.** Look at the workflow. It installs Python on the runner with `setup-python` and runs `pytest` against a PostgreSQL service container. There is no `docker build` in it anywhere. So `backend/Dockerfile` is a third artifact nothing checks — break it, and CI stays green while `docker compose up` fails on every machine including yours.
+
+That is the same mistake as section 13.1, one layer out. Having found it once and named the principle, we then did not apply the principle to the next artifact along. Which is worth saying out loud, because the lesson of 13.1 is not "test your migrations." It is:
+
+> **Ask what artifact your green build actually exercised, and name the ones it did not.** That question has to be asked repeatedly, because the answer changes every time you add a way of building or shipping the thing.
+
+The fix is three lines in the workflow and is not in this repository. Decide whether to add it before you present, and if you do not, say it is open — which is cheaper than being asked.
+
+Those are not small. Claiming "it works in Docker, so it would work deployed" is the kind of sentence that gets taken apart in a question, and the narrower claim is both true and defensible.
+
+### 13.7 Try these yourself
+
+1. **Break the chain again and watch CI catch it.** On a branch, remove the enum drops from the initial migration's `downgrade()` and push. The migration step fails with the exact error above. That is what a regression test for infrastructure looks like.
+2. **Run the three commands by hand, against a throwaway database.** Never against your development one — the downgrade deletes everything. Create `safemed_scratch`, point `DATABASE_URL` at it, and run them. Then check that a downgrade left no enum types behind:
+   ```bash
+   docker compose exec db psql -U safemed -d safemed_scratch -c "\dT"
+   ```
+3. **Read a generated migration before committing it.** Autogenerate one for a trivial model change and read every line. Find at least one thing it got wrong or left out. There usually is one.
+
+---
+
+## Chapter 14 — Finishing
+
+Shipping is a phase with its own skills, and they are not the ones that got you here. This chapter is about the last two weeks.
+
+### 14.1 Writing about your own work
+
+The hard part of the final report is not the writing. It is that you are the worst-placed person to describe your own system, because everything about it feels obvious to you, including the parts that are only obvious if you built it.
+
+Two habits that help.
+
+**Write from the record, not from memory.** Every factual claim in the report traces to a file, a commit, or a query. Not because anyone demanded it, but because your memory of this project is already wrong in places — the account of the merge collision in section 9.3 of the report is the opposite of what everyone remembered, and only the timestamps revealed it.
+
+**Prefer the claim you can point at.** An early draft said aspirin and warfarin interact "seriously enough to be one of the standard textbook examples." True, probably, and unanswerable if someone asks *which* textbook. It became "a pair DDInter grades Major" — a column value, checkable in ten seconds. Every claim in a submitted document is a claim you have offered to defend.
+
+### 14.2 The report is a build artifact
+
+`docs/FINAL_REPORT.md` is the source. The PDF is generated:
+
+```bash
+docker compose exec api python -m scripts.build_report FINAL_REPORT
+```
+
+The reason is the one from chapter 12.2. A hand-edited PDF beside a Markdown source is two documents that will disagree, and you will not find out which is current until someone reads the wrong one. Generating it means the Markdown is the only thing that can be edited, so drift is structurally impossible rather than merely discouraged.
+
+The PDF is also git-ignored, which follows: committing a build output invites someone to edit it.
+
+One thing `build_report.py` does that is worth knowing about in general. The base-14 PDF fonts cover WinAnsi only, so a character like an arrow has no glyph and renders as a blank box — **silently**, which is how a submitted document ends up with holes in it. The script transliterates those characters to ASCII before conversion. The lesson generalises past PDFs: a pipeline that drops data without complaining is worse than one that fails, which is chapter 9's lesson and section 9.1 of the report arriving from a third direction.
+
+### 14.3 Numbers you can defend
+
+The demo script ends with four numbers to memorise. The reason to memorise numbers rather than read them is not performance; it is that a number you have internalised is one you will not misstate under a question, and a misstated number is the fastest way to lose a room's confidence in everything else you said.
+
+The same script used to say two rows in the audit log were "1.5 milliseconds apart." Rehearsing found that figure tracks machine load — 2.3ms on one run, 208.6ms on another, same machine. If you quote it and the screen disagrees, you have handed away credibility for no reason. It now describes the property instead: the order is recoverable at all, which is the actual point.
+
+**State the property, not the measurement, unless the measurement is the point.** When it is the point — 21 of 84, 45 of 100 — know exactly where it came from.
+
+### 14.4 The project-management lesson, stated plainly
+
+The one real coordination failure is in section 9.3 of the report. Two people created the same file independently on the same afternoon. The lesson, in one line:
+
+> **Tasks defined by outcome cannot be checked for overlap. Tasks defined by directory can.**
+
+"Connect the account forms to the API" and "wire the frontend to the API" are the same sentence twice, and neither names the file they collided in. No amount of communicating fixes that, because spotting the overlap requires both people to have already imagined the same implementation. Ownership by directory makes the boundary visible in a diff before anything merges, and `CODEOWNERS` can enforce it without a conversation.
+
+The second half is less comfortable and more useful. One member committing twelve features in a day makes collision arithmetic rather than misfortune — anyone working in parallel is standing in ground about to be built over, and their own pace has nothing to do with it. If you are the fast one, the burden of announcing scope is yours, because you are the one generating the overlap.
+
+### 14.5 Rehearsing is testing
+
+A demo is a program with a human runtime, and it deserves the same treatment as code: run it end to end, against the real system, before it matters.
+
+Rehearsing this one found two defects in the script and confirmed six claims. That ratio is normal. The things worth checking are the ones that depend on something outside your control:
+
+- Anything hitting a live external API. The recall beat calls openFDA for real; it returns in about twenty seconds against a 120-second timeout, which is comfortable and not guaranteed.
+- Anything quoting a number that the screen will also show.
+- Anything requiring a sequence of UI steps in a particular order. The audit beat needs invite, accept, view, revoke, retry — and the refusal row only exists if all five happened.
+- Anything with accumulated state. The audit log cannot be cleared by the application, by design, so rehearsing fills it. Clear it once from `psql` before the real run — and notice that having to use `psql` to do it is itself the honest caveat: append-only is enforced in the application, not in the database.
+
+### 14.6 What we would do differently from week one
+
+Four things, and each is a mechanism rather than an intention, because a small team fitting this around coursework will not sustain anything that depends on everyone remembering.
+
+1. **Assign work by directory, not by outcome.** The collision becomes structurally impossible rather than merely unlikely.
+2. **Push every branch daily, finished or not.** Unpushed work does not exist. Three and a half hours of invisible work is all it took.
+3. **Claim the issue on the board before the first commit.** The board existed the whole time and was not the mechanism.
+4. **Grow the schema with the code.** The data model was written in week one, which made it a forecast rather than a record — and `notifications` is the table where the forecast was wrong.
+
+### 14.7 The last word
+
+The handbook started with a claim: a software engineer who can explain their choices is worth more than one who can only type code.
+
+Fourteen chapters later the evidence for that is specific rather than inspirational. The most valuable things in this project were not the features. They were a quiet empty list that should have been a warning, a green build that was testing the wrong artifact, a merge conflict whose timestamps contradicted everyone's memory of it, and a table that exists because of a plan nobody revisited.
+
+None of those are in the feature list. All of them are things you can now explain, and that is the difference the handbook was for.
+
+---
+
 ## Glossary
 
 | Term | Plain meaning |
@@ -1363,5 +1686,17 @@ Stated here so you state it first:
 | **Append-only** | A table you can add to but never change or delete - what makes a log usable as evidence |
 | **Savepoint** | A marker inside a transaction you can roll back to without losing the rest of it |
 | **clock_timestamp()** | PostgreSQL function returning the real current time; `now()` returns the transaction start time instead |
+| **SRS** | Software Requirements Specification - the document saying what the system must do, and why |
+| **BR / UR / FR** | Business, user and functional requirement - the three layers, from why the project exists down to what the software does |
+| **NFR** | Non-functional requirement - how well rather than what (speed, accessibility, degradation) |
+| **Boundary constraint** | A requirement whose whole content is "never do this"; BC-01, no diagnosing, is the most important requirement in SafeMed |
+| **Traceability** | The chain from business reason to user need to functional requirement to the test that proves it |
+| **Mermaid** | Diagrams written as text in the Markdown file and rendered by GitHub, so they diff and cannot silently go stale |
+| **Sequence diagram** | Shows the order of calls between parts for one scenario - answers "what happens when someone does X" |
+| **Dependency direction** | The rule about which layers may call which; why the same safety engine runs in a web request and in a worker |
+| **create_all()** | Builds the schema straight from the models. Fast, used by the test suite, knows nothing about history - and not what a deployment runs |
+| **Reversible migration** | One whose downgrade leaves the database in a state the upgrade can be applied to again. Proved by upgrade / downgrade / upgrade, where the second upgrade is the one that matters |
+| **Build artifact** | A file generated from a source and never edited directly - our PDF, which is git-ignored so nobody is tempted |
+| **CODEOWNERS** | A GitHub file mapping paths to the people who must review changes to them - how task-by-directory gets enforced instead of remembered |
 
 ---
