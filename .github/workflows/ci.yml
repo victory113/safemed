@@ -123,3 +123,83 @@ jobs:
       - name: Unit tests
         working-directory: frontend
         run: npm test
+
+  # Everything above tests the application. None of it tested the thing that
+  # ships it: the backend job installs Python on the runner and never builds
+  # backend/Dockerfile, so until this job existed the image was an artifact
+  # nothing checked. Break the Dockerfile and CI stayed green while
+  # `docker compose up` failed on every machine.
+  #
+  # This is the same gap as the migration one, one layer out. The question
+  # worth asking repeatedly: which artifact did the green build exercise, and
+  # which ones did it not?
+  deploy-path:
+    name: Container builds and starts
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # The two commands the README actually gives a new contributor. Nothing
+      # CI-specific except the generated key, because the point is to test the
+      # documented path rather than a convenient approximation of it.
+      - name: Create .env from the committed template
+        run: |
+          cp .env.example .env
+          key=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+          sed -i "s|^SECRET_KEY=.*|SECRET_KEY=$key|" .env
+          # If the template's placeholder survives, the app will boot with a
+          # key everyone can read. Fail here rather than pass a broken check.
+          if grep -q "^SECRET_KEY=change-me" .env; then
+            echo "SECRET_KEY placeholder was not replaced"
+            exit 1
+          fi
+          echo ".env written, SECRET_KEY generated"
+
+      - name: Build the images
+        run: docker compose build
+
+      # compose mounts ./backend over /app at runtime for live reload, which
+      # masks the image's own copy of the code. So check the image on its own,
+      # with no mount: a Dockerfile that forgot to COPY something would pass
+      # the compose check below and then fail anywhere without the source.
+      - name: The image contains a working application
+        run: |
+          docker build -t safemed-api:ci ./backend
+          docker run --rm \
+            -e SECRET_KEY=ci-only-not-a-real-secret \
+            -e DATABASE_URL=postgresql+psycopg://u:p@db:5432/d \
+            safemed-api:ci python -c "import app.main; print('import ok')"
+
+      - name: Start the stack
+        run: docker compose up -d
+
+      - name: Every service is running
+        run: |
+          running=$(docker compose ps --services --status running | sort | tr '\n' ' ')
+          echo "running: $running"
+          for s in api beat db redis worker; do
+            case " $running " in
+              *" $s "*) ;;
+              *) echo "NOT RUNNING: $s"; docker compose logs --tail 40 "$s"; exit 1 ;;
+            esac
+          done
+
+      # A container that is "running" has not necessarily served anything. The
+      # api has no healthcheck in compose, so poll it.
+      - name: The API answers /health
+        run: |
+          for _ in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/health; then echo; exit 0; fi
+            sleep 2
+          done
+          echo "api never answered /health"
+          docker compose ps
+          docker compose logs --tail 60 api
+          exit 1
+
+      # if: always() so a failure above still tears the stack down rather than
+      # leaving the runner's volumes behind.
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v
