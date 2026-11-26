@@ -37,3 +37,6 @@ docs/*.pdf
 # Deck dependencies, installed locally by docs/presentation/README.md
 docs/presentation/node_modules/
 docs/presentation/package*.json
+
+# Office lock files, created while a document is open in Word/PowerPoint/Excel
+~$*
