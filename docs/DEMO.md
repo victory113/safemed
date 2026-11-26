@@ -140,11 +140,23 @@ Scroll to **Today's medication**. Click **I took it** on one row.
 
 > "This is what she actually opens the app for. One tap."
 
-Point at the adherence figure changing.
+Point at the adherence figure.
 
-> "86% over the last seven days — 38 taken, 6 missed. And note that a dose she
-> was *told* to skip is counted separately, because being told to stop for a day
-> is not a failure to adhere."
+> "Just under three quarters over the last seven days. And note that a dose she
+> was *told* to skip is counted separately, because being told to stop for a
+> day is not a failure to adhere."
+
+**Read the percentage off the screen. Do not quote one from this script.** The
+seed's miss pattern is deterministic - the comment in `seed_demo.py` says so -
+but it only creates doses that have already come due, so the totals depend on
+what time of day you seeded. This script said 86% (38 taken, 6 missed) when it
+was written; a rehearsal seeded at 3:57pm showed 73% (36 taken, 13 missed).
+Both are correct for their seed and neither is correct in general.
+
+The sentence that is true whatever the number says is the one under the figure:
+deliberate skips are counted separately and do not lower it. That is the design
+decision worth pointing at. Expect **Stopped: 0** in the demo data, so point at
+the explanatory note rather than hunting for a non-zero count.
 
 ### Beat 5 — A live FDA recall (90 seconds) — *the one they remember*
 
@@ -180,9 +192,21 @@ Switch to the second window. Log in as Elena.
 
 Point at the alert count.
 
-> "Maria's screen had fifteen findings. Elena's has **three.** Only the serious
-> ones reach a caregiver — a 70% reduction — and the screen says so out loud
-> rather than letting her assume she's seeing everything."
+> "Maria's screen has fifteen findings now — the ten we started with, plus the
+> five recalls we just created. Elena's has **three.** Only the serious ones
+> reach a caregiver, and the screen says so out loud rather than letting her
+> assume she is seeing everything."
+
+**Do not say "a 70% reduction" here.** The measured 70% in EVALUATION.md is ten
+findings reduced to three, and it is correct - but it is measured on the
+interaction findings alone, before any recall. By this point in the demo beat 5
+has added five more, so the screen shows fifteen against three, which is 80%.
+Anyone doing the arithmetic while you talk will catch the mismatch.
+
+If you want the measured figure, attach it to the right denominator:
+
+> "On the ten interaction findings on their own, that is the 70% reduction we
+> measured. With the recalls included it is higher."
 
 Point at adherence.
 
@@ -202,61 +226,90 @@ Reload Elena's screen.
 
 **Do not re-invite yet** — the next beat needs Elena locked out.
 
-### Beat 7b — The audit log (45 seconds) — *answers "how do you know?"*
+### Beat 7b — The audit log (60 seconds) — *answers "how do you know?"*
 
-With Elena's refused screen still up, run this where the room can see it:
+**Read this before rehearsing: reloading Elena's screen does not produce a
+refusal.** Her dashboard asks "who am I linked to?" first, gets an empty list,
+and therefore never requests Maria's record at all. No request, no refusal, no
+row. That is correct behaviour and it is worth saying out loud, because it
+means the browser is not where the boundary lives. So ask the API directly.
+
+With Elena's locked-out screen still up, run:
 
 ```bash
-docker compose exec db psql -U safemed -d safemed -c "SELECT action, created_at FROM audit_events ORDER BY created_at DESC LIMIT 8;"
+docker compose exec api python -m scripts.demo_refused_read
 ```
 
-You will get something close to this — verified on a clean seed:
+> "Elena's browser cannot even ask any more - her patient list is empty. But a
+> browser is just one client. The real boundary is the API, so let's ask it
+> directly, the way a stale tab or someone curious would."
+
+It prints three lines. Narrate them:
 
 ```
- patient_record.access_denied | 23:21:24.121187
- consent.revoked              | 23:21:23.969529
- patient_record.viewed        | 23:21:23.645082
- patient_record.viewed        | 23:21:23.363048
- consent.accepted             | 23:21:11.696452
- consent.invited              | 23:21:11.694967
+  signed in as elena@safemed.demo              200
+  GET her patient's findings            403  {"detail":"You do not have access to this patient"}
+  GET a patient that does not exist     403  {"detail":"You do not have access to this patient"}
 ```
 
-> "Consent says what someone is *allowed* to see. This says what they
-> actually did.
+> "She can still sign in - revoking consent is not the same as disabling an
+> account, and we did not conflate the two. But the record is refused.
 >
-> Reading up from the bottom: Maria invited Elena, Elena accepted, Elena read
-> the record — every page load, not just the first — then Maria revoked her.
-> And the top row: `patient_record.access_denied`. Elena tried again after
-> being revoked, and the attempt is on the record.
->
-> A log that only records successes can't answer 'did anyone try?' — and
-> that's usually the question you actually have."
+> And look at the third line. That is a patient id that does not exist at all.
+> Same status, same body, character for character. The refusal does not tell
+> you which patients are real - otherwise the error message becomes a way to
+> enumerate them."
 
-**The gap between those two rows is worth knowing about**, if someone asks a
-database question. `consent.invited` and `consent.accepted` are written in the same
-transaction. PostgreSQL's `now()` returns the *transaction* start time, so
-with it both rows get an identical timestamp and their order is lost. The
-column defaults to `clock_timestamp()` instead, which reads the real clock
-each call - which is why those two rows are a measurably different time rather
-than tied. Do not quote a figure: it tracks machine load, and has been seen
-at 2.3ms and at 209ms on the same machine. The point is that the order is
-recoverable at all.
+Now the log:
+
+```bash
+docker compose exec db psql -U safemed -d safemed -c "SELECT action, patient_id, created_at FROM audit_events ORDER BY created_at DESC LIMIT 8;"
+```
+
+```
+ patient_record.access_denied |                                      | 22:50:45.628
+ patient_record.access_denied |                                      | 22:50:45.603
+ consent.revoked              | fa9c68f9-faa1-4c0b-9299-aebad065ad24 | 22:49:19
+ patient_record.viewed        | fa9c68f9-faa1-4c0b-9299-aebad065ad24 | 22:49:01
+ patient_record.viewed        | fa9c68f9-faa1-4c0b-9299-aebad065ad24 | 22:49:00
+```
+
+> "Reading up from the bottom: Elena read the record - every page load, not
+> just the first - then Maria revoked her, then two refused attempts.
+>
+> And notice the patient column is empty on both refusals. We record that
+> someone was refused, and we deliberately do not record who they asked about,
+> because the log itself would otherwise confirm that a patient exists. The
+> same reason the endpoint returns 403 and not 404.
+>
+> A log that only records successes cannot answer 'did anyone try?' - and
+> that is usually the question you actually have."
 
 **Expect more `patient_record.viewed` rows than there were page loads.** One
 caregiver screen produces six: three endpoints (`findings`, `doses/today`,
 `adherence`), each hit twice because React's StrictMode deliberately runs
 effects twice in development to surface unsafe ones. A production build makes
-three. Every read genuinely is a read, so logging each one is correct — but
+three. Every read genuinely is a read, so logging each one is correct - but
 know the number so you can answer it rather than be surprised by it.
+
+**On the gap between the two consent rows**, if someone asks a database
+question. `consent.invited` and `consent.accepted` are written in the same
+transaction. PostgreSQL's `now()` returns the *transaction* start time, so with
+it both rows get an identical timestamp and their order is lost. The column
+defaults to `clock_timestamp()` instead, which reads the real clock each call.
+Do not quote a figure for the gap: it tracks machine load, and has been seen at
+2.3ms and at 209ms on the same machine. The point is that the order is
+recoverable at all.
 
 If asked how solid it is:
 
-> "Append-only, and not by convention — the ORM raises if any code tries to
+> "Append-only, and not by convention - the ORM raises if any code tries to
 > change or delete a row, and there's a test for it. Every entry is written
 > inside the same transaction as the thing it describes, so there's never an
 > entry for something that didn't happen, and never a change with no entry."
 
-*(Re-invite Elena afterwards if you plan to demo again.)*
+*(Re-invite Elena afterwards if you plan to demo again - or just re-run
+`scripts.seed_demo`, which restores the grant to ACTIVE.)*
 
 ### Beat 8 — Where the AI is, and where it isn't (45 seconds)
 
@@ -315,6 +368,59 @@ worker's not responding — I'll come back to that." Never debug live. Beats 3,
 > finding still displays. Nothing in the safety path depends on a service being
 > up.
 
+**"That's a Class I recall — the FDA's most serious class — and you're only showing it as Moderate?"**
+
+> Severity here is two axes, not one: how serious the FDA says the recall is,
+> and how sure we are it is her product. A Class I recall we cannot tie to her
+> specific NDC is Moderate - serious, but unconfirmed. A Class I we *can* tie
+> to her NDC is Severe and goes to her daughter. We do not let FDA class alone
+> drive the alert, because that would send a caregiver an alarm about a product
+> the patient may not even have.
+
+The matrix is in `app/services/recalls.py`:
+
+| | Class I | Class II or III |
+|---|---|---|
+| **CONFIRMED** - her NDC matches | SEVERE | MODERATE |
+| **POSSIBLE** - drug name only | MODERATE | MILD |
+
+Which is why no recall in the demo reaches Elena: the confirmed one is Class II
+and the Class I ones are unconfirmed. If that looks like the system
+under-reacting, it is the same argument as the 45-of-100 number - a caregiver
+who gets two false alarms stops reading the third.
+
+**"It's four in the afternoon — why does it say the 8pm dose was missed?"**
+
+> There are two kinds of time on that screen and we treat them differently on
+> purpose. A *schedule* is what the patient typed: she asked for 8:00, so she
+> sees 8:00. If we converted it to her browser's zone she would see 2:00 AM,
+> and the number she typed would not be the number she reads back, which looks
+> broken. An *event* timestamp - when a finding was detected, when access was
+> removed - is a real instant, so that one does render in your local zone.
+>
+> The gap is that there is no time zone on the user record yet, so "missed" is
+> computed against UTC. That is a listed limitation and the real fix is a zone
+> on the user. What we refused to do was guess a zone and print a confident
+> wrong hour, which is the failure this whole project is about.
+
+The reasoning is written at the top of `frontend/src/pages/dashboard/format.ts`
+if anyone wants to see it. Do not be defensive about this: it connects the one
+cosmetic oddity on screen to the central argument of the project.
+
+**Know what the screen will show before you walk in.** Dose rows are UTC, so
+what reads as "missed" depends on the gap between UTC and your local clock,
+not on the data. Central time is UTC-6, so:
+
+| You present at | UTC is | 8:00 AM row | 8:00 PM row |
+|---|---|---|---|
+| 9:00am CST | 15:00 | past, loggable | still ahead |
+| 2:00pm CST | 20:00 | past, loggable | just come due |
+| 5:00pm CST | 23:00 | past | past - shows Missed |
+
+Earlier in the day is the better-looking demo, because fewer rows have come
+due. Check the screen after seeding and know which rows read as missed, so the
+question does not surprise you mid-sentence.
+
 **"What happens if the audit log itself fails?"**
 
 > A caregiver's *read* is still served, and the failure is logged loudly. A
@@ -368,7 +474,7 @@ worker's not responding — I'll come back to that." Never debug live. Beats 3,
 |---|---|
 | **25%** | of real interactions missed by name matching alone (2 of them severe) |
 | **45 of 100** | FDA recalls carry no product identifier — hence CONFIRMED vs POSSIBLE |
-| **70%** | reduction in what reaches a caregiver, via severity routing |
+| **70%** | reduction in what reaches a caregiver, via severity routing — measured on the 10 interaction findings reduced to 3, so quote that denominator, not the 15 on screen after beat 5 |
 | **160,235** | interaction pairs, 99.8% identifier-addressable |
 
 Full method and threats to validity in [EVALUATION.md](EVALUATION.md).
