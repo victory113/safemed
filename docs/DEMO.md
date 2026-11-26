@@ -120,7 +120,7 @@ Now the part that makes the project:
 
 > "The interaction dataset doesn't call it aspirin. It calls it
 > **Acetylsalicylic acid**. When we first built this, warfarin and aspirin —
-> a textbook Major interaction — returned **nothing**. No error. The safety
+> a pair DDInter grades Major — returned **nothing**. No error. The safety
 > check just quietly found zero.
 >
 > That is why everything is matched by identifier instead of name. We measured
@@ -232,12 +232,15 @@ You will get something close to this — verified on a clean seed:
 > A log that only records successes can't answer 'did anyone try?' — and
 > that's usually the question you actually have."
 
-**The 1.5 milliseconds are worth knowing about**, if someone asks a database
-question. `consent.invited` and `consent.accepted` are written in the same
+**The gap between those two rows is worth knowing about**, if someone asks a
+database question. `consent.invited` and `consent.accepted` are written in the same
 transaction. PostgreSQL's `now()` returns the *transaction* start time, so
 with it both rows get an identical timestamp and their order is lost. The
 column defaults to `clock_timestamp()` instead, which reads the real clock
-each call — which is why those two rows are 1.5ms apart rather than tied.
+each call - which is why those two rows are a measurably different time rather
+than tied. Do not quote a figure: it tracks machine load, and has been seen
+at 2.3ms and at 209ms on the same machine. The point is that the order is
+recoverable at all.
 
 **Expect more `patient_record.viewed` rows than there were page loads.** One
 caregiver screen produces six: three endpoints (`findings`, `doses/today`,
