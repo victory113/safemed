@@ -230,7 +230,7 @@ Constraints that override every other requirement in this document.
 | Audit | FR-28…FR-34 | 30 |
 | AI boundary | AIR-01…AIR-05 | 15 |
 
-**194 automated tests**, run on every push by `.github/workflows/ci.yml`.
+**197 automated tests**, run on every push by `.github/workflows/ci.yml`.
 
 ---
 

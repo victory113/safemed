@@ -170,7 +170,7 @@ safemed/
 │   ├── Dockerfile
 │   ├── alembic/             database migrations
 │   ├── scripts/             data import, RXCUI resolution, seeding, evaluation
-│   ├── tests/               16 files, 194 tests
+│   ├── tests/               16 files, 197 tests
 │   └── app/
 │       ├── main.py          application entry point
 │       ├── api/             HTTP routes and dependencies

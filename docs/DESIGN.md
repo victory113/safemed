@@ -350,7 +350,7 @@ safemed/
 ├── backend/
 │   ├── alembic/versions/         4 migrations, reversible
 │   ├── scripts/                  import_ddinter · resolve_rxcuis · seed_demo · evaluate
-│   ├── tests/                    16 files · 194 tests
+│   ├── tests/                    16 files · 197 tests
 │   └── app/
 │       ├── api/v1/               one router per resource
 │       ├── core/                 config · security

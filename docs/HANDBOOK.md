@@ -1391,7 +1391,7 @@ A specification that only lists requirements is a wish list. What makes this one
 
 That third column changes the character of the document. "We met FR-30" stops being a claim and becomes a command anyone in the room can run. It also keeps the document honest: delete that test and CI stays green, but the specification now cites a test that does not exist, and the next person to check finds out.
 
-Section 8.2 totals it by area — 194 automated tests across eight areas, every one run by CI on every push.
+Section 8.2 totals it by area — 197 automated tests across eight areas, every one run by CI on every push.
 
 > **A requirement with no test is an intention.** The test is what converts it into something you can demonstrate rather than assert.
 

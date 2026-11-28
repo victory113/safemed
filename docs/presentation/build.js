@@ -172,8 +172,16 @@ function bullets(slide, items, opts) {
 
 /* ---------------- slides ---------------- */
 
-// 1 — title
+/* ---------------- running order ----------------
+ * Nine slides carry the ten-minute talk; everything after the close is
+ * appendix, kept for questions and for the morning the demo will not start.
+ * Jump to an appendix slide by typing its number and pressing Enter in
+ * presenter view - the audience never sees it unless you go there.
+ */
+
 pres.addSection({ title: "Opening" });
+
+// 1 — title
 let s = pres.addSlide({ masterName: "TITLE_DARK", sectionTitle: "Opening" });
 s.addText("SafeMed", { placeholder: "title" });
 s.addText(
@@ -187,13 +195,14 @@ s.addText(
 );
 s.addShape(pres.ShapeType.rect, { x: M, y: 1.95, w: 1.2, h: 0.09,
   fill: { color: THEME.colors.accent2 }, line: { width: 0 }, objectName: "rule" });
-s.addNotes(
+s.addNotes("[0:00-0:20] " +
   "Introduce the team and roles in one sentence each. Do not open the app yet - the problem has to land first."
 );
 
+pres.addSection({ title: "The problem" });
+
 // 2 — the problem
-pres.addSection({ title: "Problem" });
-s = pres.addSlide({ masterName: "CONTENT_DARK", sectionTitle: "Problem" });
+s = pres.addSlide({ masterName: "CONTENT_DARK", sectionTitle: "The problem" });
 s.addText("Two safe prescriptions, nobody holding the list", { placeholder: "title" });
 s.addText(
   "Most medication harm is not one bad prescription. It is two reasonable prescriptions from two prescribers who never see each other's work.",
@@ -219,44 +228,14 @@ s.addText(
   "None of this information is anywhere near the person actually taking the tablets.\n\nAnd none of it is watching continuously.",
   { x: 8.75, y: 2.3, w: 3.6, h: 3.4, fontSize: 15, color: "E8F2F7", isTextBox: true, margin: 0 }
 );
-s.addNotes(
+s.addNotes("[0:20-1:05] " +
   "45 seconds, no screen. The information is public - the gap is distribution and monitoring, not knowledge."
 );
 
-// 3 — why a system
-s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Problem" });
-s.addText("Why this is a system, not a prompt", { placeholder: "title" });
-s.addText(
-  "Anyone can ask a chatbot about one drug pair once. That is a question, and it is answered and forgotten.",
-  { x: M, y: 1.45, w: W - 2 * M, h: 0.6, fontSize: 16, color: THEME.colors.accent5, isTextBox: true, italic: true }
-);
-const steps = [
-  ["Recall published", "03:00 on a Tuesday, nobody is awake"],
-  ["Checked automatically", "Against one patient's specific product code"],
-  ["Routed by severity", "Only serious findings reach a caregiver"],
-  ["Recorded", "Who saw what, and when, append-only"],
-];
-steps.forEach(([k, v], i) => {
-  const x = M + i * 3.017;
-  card(s, { x, y: 2.4, w: 2.85, h: 2.5 });
-  s.addShape(pres.ShapeType.ellipse, { x: x + 0.25, y: 2.65, w: 0.6, h: 0.6,
-    fill: { color: THEME.colors.accent1 }, line: { width: 0 }, objectName: "step-dot" });
-  s.addText(String(i + 1), { x: x + 0.25, y: 2.72, w: 0.6, h: 0.45, fontSize: 18, bold: true,
-    align: "center", color: "FFFFFF", isTextBox: true, margin: 0 });
-  s.addText(k, { x: x + 0.25, y: 3.4, w: 2.35, h: 0.6, fontSize: 15, bold: true,
-    color: THEME.colors.dk2, isTextBox: true, margin: 0 });
-  s.addText(v, { x: x + 0.25, y: 4.0, w: 2.35, h: 0.8, fontSize: 12,
-    color: THEME.colors.dk1, isTextBox: true, margin: 0 });
-});
-s.addText(
-  "That is scheduling, idempotency, normalisation, authorization and auditability - a systems problem.",
-  { x: M, y: 5.3, w: W - 2 * M, h: 0.5, fontSize: 15, bold: true, color: THEME.colors.dk2, isTextBox: true }
-);
-s.addNotes("The 'couldn't ChatGPT do this?' question, answered before it is asked.");
+pres.addSection({ title: "The design" });
 
 // 4 — architecture
-pres.addSection({ title: "Design" });
-s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Design" });
+s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "The design" });
 s.addText("The architecture is one arrow", { placeholder: "title" });
 const flow = [
   ["Authoritative\ndata", THEME.colors.accent1],
@@ -284,40 +263,25 @@ bullets(s, [
   "Severity would be invented rather than read from a source",
   "Turn the AI off in SafeMed and every finding still works - the full test suite passes with it disabled",
 ], { y: 4.15, h: 2.1, fontSize: 15 });
-s.addNotes("This single slide is the thesis of the project. Do not rush it.");
+s.addNotes("[1:05-1:50] " +"This single slide is the thesis of the project. Do not rush it.");
 
-// 5 — the stack
-s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Design" });
-s.addText("What it is built from", { placeholder: "title" });
-const stack = [
-  ["Frontend", "React 19 · TypeScript · Vite", "2,862 lines"],
-  ["API", "FastAPI · Pydantic v2", "4,234 lines"],
-  ["Data", "PostgreSQL 16 · SQLAlchemy · Alembic", "4 migrations"],
-  ["Background", "Celery · Celery Beat · Redis", "3 scheduled jobs"],
-  ["Quality", "pytest · GitHub Actions CI", "194 tests"],
-];
-stack.forEach(([layer, tech, metric], i) => {
-  const y = 1.55 + i * 0.92;
-  card(s, { x: M, y, w: 8.1, h: 0.78 });
-  s.addText(layer, { x: M + 0.22, y: y + 0.2, w: 1.7, h: 0.4, fontSize: 14, bold: true,
-    color: THEME.colors.accent1, isTextBox: true, margin: 0 });
-  s.addText(tech, { x: M + 2.0, y: y + 0.2, w: 4.0, h: 0.4, fontSize: 13,
-    color: THEME.colors.dk1, isTextBox: true, margin: 0 });
-  s.addText(metric, { x: M + 6.1, y: y + 0.2, w: 1.9, h: 0.4, fontSize: 13, bold: true,
-    align: "right", color: THEME.colors.dk2, isTextBox: true, margin: 0 });
-});
-card(s, { x: 9.3, y: 1.55, w: 3.3, h: 4.15, fill: THEME.colors.dk2 });
-s.addText("Modular monolith", { x: 9.52, y: 1.8, w: 2.9, h: 0.4, fontSize: 15, bold: true,
-  color: THEME.colors.accent2, isTextBox: true, margin: 0 });
+pres.addSection({ title: "Live demonstration" });
+
+// 12 — demo divider
+s = pres.addSlide({ masterName: "SECTION", sectionTitle: "Live demonstration" });
+s.addText("Live demonstration", { placeholder: "title" });
 s.addText(
-  "Microservices were considered and rejected.\n\nA three-person team cannot operate a distributed system and also build the thing being distributed.\n\nModule boundaries are still real - no service imports the HTTP layer.",
-  { x: 9.52, y: 2.3, w: 2.9, h: 3.2, fontSize: 12, color: "DCEAF2", isTextBox: true, margin: 0 }
+  "Maria's list and what it found  ·  the daily check-in  ·  a live FDA recall  ·  her daughter's view  ·  consent revoked  ·  the audit log",
+  { placeholder: "body" }
 );
-s.addNotes("Keep this brief - 30 seconds. The interesting slides come next.");
+s.addNotes("[1:50-6:20 | 4.5 min] " +
+  "Follow DEMO.md. If a beat fails, say one sentence and move on - never debug live. Beats 3, 6 and 7 carry the presentation on their own."
+);
+
+pres.addSection({ title: "What we found" });
 
 // 6 — the defining bug
-pres.addSection({ title: "Findings" });
-s = pres.addSlide({ masterName: "CONTENT_DARK", sectionTitle: "Findings" });
+s = pres.addSlide({ masterName: "CONTENT_DARK", sectionTitle: "What we found" });
 s.addText("The bug that defined the project", { placeholder: "title" });
 s.addText(
   "Warfarin + aspirin is a textbook major interaction. Our safety check returned nothing.",
@@ -340,12 +304,12 @@ s.addText(
   "A safety check that quietly finds zero looks exactly like good news. That is the failure mode that matters here - and it is why every medication is resolved to an RXCUI and matched by identifier, not by name.",
   { x: M + 0.3, y: 4.85, w: 11.4, h: 0.9, fontSize: 15, color: "F6DDE1", isTextBox: true, margin: 0 }
 );
-s.addNotes(
+s.addNotes("[6:20-7:10] " +
   "This is the strongest moment in the whole presentation. Slow down. Markers have seen projects that work; they have seen few students explain an invisible bug and what changed so it cannot recur."
 );
 
 // 7 — measured: 25%
-s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Findings" });
+s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "What we found" });
 s.addText("So we measured what name matching misses", { placeholder: "title" });
 s.addText(
   "15-medication panel. Same drugs, same dataset, same code path. The only variable is whether identifiers are available.",
@@ -375,10 +339,192 @@ s.addText(
   "Acetylsalicylic acid + Warfarin  (Major)\nAcetylsalicylic acid + Ibuprofen  (Major)\nAcetaminophen + Warfarin  (Moderate)",
   { x: 7.82, y: 4.62, w: 4.7, h: 0.9, fontSize: 12, color: THEME.colors.dk1, isTextBox: true, margin: 0 }
 );
-s.addNotes("Name matching recovers only 75% of what the same dataset holds for the same patient.");
+s.addNotes("[7:10-8:00] " +"Name matching recovers only 75% of what the same dataset holds for the same patient.");
+
+// 11 — AI boundary
+s = pres.addSlide({ masterName: "CONTENT_DARK", sectionTitle: "What we found" });
+s.addText("Where the AI is, and where it is not", { placeholder: "title" });
+const guards = [
+  ["It never judges", "Severity comes from the dataset. The prompt asks for a rewrite, not an assessment."],
+  ["It never sees a patient", "Drug names and source text only. No name, age, email, id or medication list - there is no payload to leak."],
+  ["Every response is checked", "11 forbidden patterns catch any instruction to stop or change a medication. A failing response is discarded, not shown."],
+];
+guards.forEach(([t, d], i) => {
+  const x = M + i * 4.05;
+  card(s, { x, y: 1.75, w: 3.8, h: 2.9, fill: "14496D", line: "2E6286" });
+  s.addShape(pres.ShapeType.ellipse, { x: x + 0.3, y: 2.0, w: 0.55, h: 0.55,
+    fill: { color: THEME.colors.accent2 }, line: { width: 0 }, objectName: "guard-dot" });
+  s.addText(String(i + 1), { x: x + 0.3, y: 2.07, w: 0.55, h: 0.4, fontSize: 16, bold: true,
+    align: "center", color: "0B3B5C", isTextBox: true, margin: 0 });
+  s.addText(t, { x: x + 0.3, y: 2.7, w: 3.2, h: 0.5, fontSize: 15, bold: true,
+    color: "FFFFFF", isTextBox: true, margin: 0 });
+  s.addText(d, { x: x + 0.3, y: 3.2, w: 3.2, h: 1.3, fontSize: 12,
+    color: "CFE3EE", isTextBox: true, margin: 0 });
+});
+s.addText(
+  "Turn the AI off completely and every finding still works. The AI makes SafeMed easier to understand. It is never what makes it correct.",
+  { x: M, y: 5.0, w: W - 2 * M, h: 0.8, fontSize: 17, bold: true, color: THEME.colors.accent3, isTextBox: true }
+);
+s.addNotes("[8:00-8:45] " +"If asked how much is AI-generated: answer honestly and specifically, and point at the handbook.");
+
+pres.addSection({ title: "Closing" });
+
+// 16 — limitations and future work
+s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Closing" });
+s.addText("What we did not build, and what comes next", { placeholder: "title" });
+s.addText("Known limitations", { x: M, y: 1.45, w: 5.9, h: 0.4, fontSize: 17, bold: true,
+  color: THEME.colors.accent4, isTextBox: true });
+bullets(s, [
+  "No interface for reading the audit log - the rows exist, nobody can read them",
+  "Schedules are wall-clock UTC; no per-user time zones",
+  "One interaction dataset",
+  "Append-only is enforced in the application, not cryptographically",
+  "Not deployed to a hosted environment",
+], { x: M, y: 1.9, w: 5.9, h: 3.4, fontSize: 14 });
+s.addText("Next, in priority order", { x: 6.9, y: 1.45, w: 5.7, h: 0.4, fontSize: 17, bold: true,
+  color: THEME.colors.accent1, isTextBox: true });
+bullets(s, [
+  "An audit review interface - the data exists and is unusable by the people it protects",
+  "A second interaction dataset, so we could speak to completeness",
+  "Per-user time zones",
+  "Notification delivery with status and retry",
+  "Alerting on repeated refused access attempts",
+], { x: 6.9, y: 1.9, w: 5.7, h: 3.4, fontSize: 14 });
+s.addNotes("[8:45-9:20] " +"Having a precise answer here is worth more than having fewer limitations.");
+
+// 18 — close
+s = pres.addSlide({ masterName: "TITLE_DARK", sectionTitle: "Closing" });
+s.addText("What SafeMed argues", { placeholder: "title" });
+s.addText(
+  [
+    { text: "Whether a drug combination is dangerous is a question with a sourced, checkable answer. That answer should come from the source.", options: { breakLine: true, fontSize: 17 } },
+    { text: "", options: { breakLine: true, fontSize: 8 } },
+    { text: "Explaining it to a frightened seventy-two-year-old is a language problem. That is where a language model earns its place.", options: { breakLine: true, fontSize: 17 } },
+    { text: "", options: { breakLine: true, fontSize: 8 } },
+    { text: "Keeping those two jobs apart is what lets SafeMed cite every claim it makes.", options: { fontSize: 17, bold: true, color: "9FD9D2" } },
+  ],
+  { placeholder: "body" }
+);
+s.addShape(pres.ShapeType.rect, { x: M, y: 1.95, w: 1.2, h: 0.09,
+  fill: { color: THEME.colors.accent2 }, line: { width: 0 }, objectName: "rule" });
+s.addText("github.com/victory113/safemed", { x: M, y: 6.3, w: 8, h: 0.4, fontSize: 14,
+  color: "7FA3B8", isTextBox: true });
+s.addNotes("[9:20-9:50] " +"End here. Take questions. The Q&A section of DEMO.md has prepared answers for the six most likely.");
+
+pres.addSection({ title: "Appendix" });
+// ---- APPENDIX SLIDES INSERTED BELOW ----
+
+// A1 - fallback: the patient screen
+s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Appendix" });
+s.addText("If the demo will not start: the patient screen", { placeholder: "title" });
+s.addImage({ path: __dirname + "/img/patient-findings.jpg", x: M, y: 1.45, w: 6.1, h: 5.3 });
+card(s, { x: 7.2, y: 1.45, w: 5.4, h: 5.3 });
+s.addText([
+  { text: "Narrate this exactly as you would the live screen.", options: { breakLine: true } },
+  { text: " ", options: { breakLine: true } },
+  { text: "Severity comes from the dataset, not from us. The card names the interaction, names which of her own medicines are involved, and cites DDInter 2.0 so a pharmacist can check it.", options: { breakLine: true } },
+  { text: " ", options: { breakLine: true } },
+  { text: "In plain language", options: { bold: true } },
+  { text: " is the only part a model wrote. The paragraph above it is the finding's own text, and the column holding the model's version is nullable: turn the AI off and this screen still works." },
+], { x: 7.45, y: 1.7, w: 4.9, h: 4.8, fontSize: 14, color: THEME.colors.dk1, isTextBox: true, margin: 0 });
+s.addNotes("Fallback for a failed demo, and the slide for beat 3 if the projector cannot show the browser. Say the same words either way.");
+
+
+// A2 - fallback: recalls, confirmed vs possible
+s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Appendix" });
+s.addText("Two recalls, two levels of certainty", { placeholder: "title" });
+s.addImage({ path: __dirname + "/img/recall-confirmed-vs-possible.jpg", x: M, y: 1.45, w: 6.4, h: 5.3 });
+card(s, { x: 7.5, y: 1.45, w: 5.1, h: 2.5, fill: "EAF4F2", line: THEME.colors.accent2 });
+s.addText([
+  { text: "Recall affects your Metformin", options: { bold: true, color: THEME.colors.dk2, breakLine: true } },
+  { text: "The recall names the exact product code on her record. We can say it affects her." },
+], { x: 7.75, y: 1.7, w: 4.6, h: 2.1, fontSize: 14, color: THEME.colors.dk1, isTextBox: true, margin: 0 });
+card(s, { x: 7.5, y: 4.2, w: 5.1, h: 2.55, fill: "FBF4E6", line: THEME.colors.accent3 });
+s.addText([
+  { text: "Recall may affect your Metformin", options: { bold: true, color: THEME.colors.dk2, breakLine: true } },
+  { text: "Same drug, manufacturer unknown. She is asked to check the label, not told she is affected. 45 of 100 FDA recalls carry no usable product identifier, so this is the common case, not the edge case." },
+], { x: 7.75, y: 4.45, w: 4.6, h: 2.2, fontSize: 14, color: THEME.colors.dk1, isTextBox: true, margin: 0 });
+s.addNotes("The false-alarm argument. A system that cried wolf on every recall would be switched off inside a week.");
+
+
+// A3 - fallback: the caregiver screen
+s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Appendix" });
+s.addText("The same data, a deliberately smaller view", { placeholder: "title" });
+s.addImage({ path: __dirname + "/img/caregiver-view.jpg", x: M, y: 1.45, w: 6.2, h: 5.3 });
+card(s, { x: 7.3, y: 1.45, w: 5.3, h: 5.3 });
+s.addText([
+  { text: "Elena sees three findings. Maria has ten.", options: { bold: true, breakLine: true } },
+  { text: " ", options: { breakLine: true } },
+  { text: "Severity decides what crosses the boundary, and the screen says so in words: serious alerts only.", options: { breakLine: true } },
+  { text: " ", options: { breakLine: true } },
+  { text: "The header names the patient and the moment access was granted. Revoking takes effect on her next request, not when her session expires, and the revoked grant is kept rather than deleted.", options: { breakLine: true } },
+  { text: " ", options: { breakLine: true } },
+  { text: "Ten warnings of equal weight is the same as no warnings.", options: { italic: true, color: THEME.colors.accent1 } },
+], { x: 7.55, y: 1.7, w: 4.8, h: 4.8, fontSize: 14, color: THEME.colors.dk1, isTextBox: true, margin: 0 });
+s.addNotes("70% reduction, measured on the ten interaction findings reduced to three. Quote that denominator, not the fifteen on screen after the recall beat.");
+
+// 3 — why a system
+s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Appendix" });
+s.addText("Why this is a system, not a prompt", { placeholder: "title" });
+s.addText(
+  "Anyone can ask a chatbot about one drug pair once. That is a question, and it is answered and forgotten.",
+  { x: M, y: 1.45, w: W - 2 * M, h: 0.6, fontSize: 16, color: THEME.colors.accent5, isTextBox: true, italic: true }
+);
+const steps = [
+  ["Recall published", "03:00 on a Tuesday, nobody is awake"],
+  ["Checked automatically", "Against one patient's specific product code"],
+  ["Routed by severity", "Only serious findings reach a caregiver"],
+  ["Recorded", "Who saw what, and when, append-only"],
+];
+steps.forEach(([k, v], i) => {
+  const x = M + i * 3.017;
+  card(s, { x, y: 2.4, w: 2.85, h: 2.5 });
+  s.addShape(pres.ShapeType.ellipse, { x: x + 0.25, y: 2.65, w: 0.6, h: 0.6,
+    fill: { color: THEME.colors.accent1 }, line: { width: 0 }, objectName: "step-dot" });
+  s.addText(String(i + 1), { x: x + 0.25, y: 2.72, w: 0.6, h: 0.45, fontSize: 18, bold: true,
+    align: "center", color: "FFFFFF", isTextBox: true, margin: 0 });
+  s.addText(k, { x: x + 0.25, y: 3.4, w: 2.35, h: 0.6, fontSize: 15, bold: true,
+    color: THEME.colors.dk2, isTextBox: true, margin: 0 });
+  s.addText(v, { x: x + 0.25, y: 4.0, w: 2.35, h: 0.8, fontSize: 12,
+    color: THEME.colors.dk1, isTextBox: true, margin: 0 });
+});
+s.addText(
+  "That is scheduling, idempotency, normalisation, authorization and auditability - a systems problem.",
+  { x: M, y: 5.3, w: W - 2 * M, h: 0.5, fontSize: 15, bold: true, color: THEME.colors.dk2, isTextBox: true }
+);
+s.addNotes("The 'couldn't ChatGPT do this?' question, answered before it is asked.");
+
+// 5 — the stack
+s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Appendix" });
+s.addText("What it is built from", { placeholder: "title" });
+const stack = [
+  ["Frontend", "React 19 · TypeScript · Vite", "2,862 lines"],
+  ["API", "FastAPI · Pydantic v2", "4,234 lines"],
+  ["Data", "PostgreSQL 16 · SQLAlchemy · Alembic", "4 migrations"],
+  ["Background", "Celery · Celery Beat · Redis", "3 scheduled jobs"],
+  ["Quality", "pytest · GitHub Actions CI", "197 tests"],
+];
+stack.forEach(([layer, tech, metric], i) => {
+  const y = 1.55 + i * 0.92;
+  card(s, { x: M, y, w: 8.1, h: 0.78 });
+  s.addText(layer, { x: M + 0.22, y: y + 0.2, w: 1.7, h: 0.4, fontSize: 14, bold: true,
+    color: THEME.colors.accent1, isTextBox: true, margin: 0 });
+  s.addText(tech, { x: M + 2.0, y: y + 0.2, w: 4.0, h: 0.4, fontSize: 13,
+    color: THEME.colors.dk1, isTextBox: true, margin: 0 });
+  s.addText(metric, { x: M + 6.1, y: y + 0.2, w: 1.9, h: 0.4, fontSize: 13, bold: true,
+    align: "right", color: THEME.colors.dk2, isTextBox: true, margin: 0 });
+});
+card(s, { x: 9.3, y: 1.55, w: 3.3, h: 4.15, fill: THEME.colors.dk2 });
+s.addText("Modular monolith", { x: 9.52, y: 1.8, w: 2.9, h: 0.4, fontSize: 15, bold: true,
+  color: THEME.colors.accent2, isTextBox: true, margin: 0 });
+s.addText(
+  "Microservices were considered and rejected.\n\nA three-person team cannot operate a distributed system and also build the thing being distributed.\n\nModule boundaries are still real - no service imports the HTTP layer.",
+  { x: 9.52, y: 2.3, w: 2.9, h: 3.2, fontSize: 12, color: "DCEAF2", isTextBox: true, margin: 0 }
+);
+s.addNotes("Keep this brief - 30 seconds. The interesting slides come next.");
 
 // 8 — recalls
-s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Findings" });
+s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Appendix" });
 s.addText("Recalls: saying how sure we are", { placeholder: "title" });
 s.addText(
   "We sampled 100 current FDA enforcement reports. 45 carry no product identifier at all.",
@@ -411,7 +557,7 @@ s.addText(
 s.addNotes("The false-alarm argument is the one non-technical markers find most persuasive.");
 
 // 9 — consent and routing
-s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Findings" });
+s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Appendix" });
 s.addText("Consent is the authorization rule", { placeholder: "title" });
 bullets(s, [
   "A caregiver sees a patient only through a grant the patient created and can revoke",
@@ -437,7 +583,7 @@ s.addText("a 70% reduction - and the screen says so out loud rather than letting
 s.addNotes("Ten warnings of equal weight is the same as no warnings.");
 
 // 10 — audit
-s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Findings" });
+s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Appendix" });
 s.addText("Consent says what is allowed. The audit log says what happened", { placeholder: "title" });
 const log = [
   ["consent.invited", "Maria invited Elena", THEME.colors.accent5],
@@ -465,49 +611,10 @@ s.addText(
 );
 s.addNotes("Run the psql query live here if the terminal is already up. Read the log bottom to top.");
 
-// 11 — AI boundary
-s = pres.addSlide({ masterName: "CONTENT_DARK", sectionTitle: "Findings" });
-s.addText("Where the AI is, and where it is not", { placeholder: "title" });
-const guards = [
-  ["It never judges", "Severity comes from the dataset. The prompt asks for a rewrite, not an assessment."],
-  ["It never sees a patient", "Drug names and source text only. No name, age, email, id or medication list - there is no payload to leak."],
-  ["Every response is checked", "11 forbidden patterns catch any instruction to stop or change a medication. A failing response is discarded, not shown."],
-];
-guards.forEach(([t, d], i) => {
-  const x = M + i * 4.05;
-  card(s, { x, y: 1.75, w: 3.8, h: 2.9, fill: "14496D", line: "2E6286" });
-  s.addShape(pres.ShapeType.ellipse, { x: x + 0.3, y: 2.0, w: 0.55, h: 0.55,
-    fill: { color: THEME.colors.accent2 }, line: { width: 0 }, objectName: "guard-dot" });
-  s.addText(String(i + 1), { x: x + 0.3, y: 2.07, w: 0.55, h: 0.4, fontSize: 16, bold: true,
-    align: "center", color: "0B3B5C", isTextBox: true, margin: 0 });
-  s.addText(t, { x: x + 0.3, y: 2.7, w: 3.2, h: 0.5, fontSize: 15, bold: true,
-    color: "FFFFFF", isTextBox: true, margin: 0 });
-  s.addText(d, { x: x + 0.3, y: 3.2, w: 3.2, h: 1.3, fontSize: 12,
-    color: "CFE3EE", isTextBox: true, margin: 0 });
-});
-s.addText(
-  "Turn the AI off completely and every finding still works. The AI makes SafeMed easier to understand. It is never what makes it correct.",
-  { x: M, y: 5.0, w: W - 2 * M, h: 0.8, fontSize: 17, bold: true, color: THEME.colors.accent3, isTextBox: true }
-);
-s.addNotes("If asked how much is AI-generated: answer honestly and specifically, and point at the handbook.");
-
-// 12 — demo divider
-pres.addSection({ title: "Demo" });
-s = pres.addSlide({ masterName: "SECTION", sectionTitle: "Demo" });
-s.addText("Live demonstration", { placeholder: "title" });
-s.addText(
-  "Maria's list and what it found  ·  the daily check-in  ·  a live FDA recall  ·  her daughter's view  ·  consent revoked  ·  the audit log",
-  { placeholder: "body" }
-);
-s.addNotes(
-  "Follow DEMO.md. If a beat fails, say one sentence and move on - never debug live. Beats 3, 6 and 7 carry the presentation on their own."
-);
-
 // 13 — testing
-pres.addSection({ title: "Quality" });
-s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Quality" });
+s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Appendix" });
 s.addText("Testing and continuous integration", { placeholder: "title" });
-stat(s, { x: M, y: 1.5, w: 2.7, value: "194", label: "automated tests" });
+stat(s, { x: M, y: 1.5, w: 2.7, value: "197", label: "automated tests" });
 stat(s, { x: M + 2.9, y: 1.5, w: 2.7, value: "16", label: "test files" });
 stat(s, { x: M + 5.8, y: 1.5, w: 2.7, value: "4", label: "CI checks per push" });
 stat(s, { x: M + 8.7, y: 1.5, w: 2.7, value: "0", label: "duplicates over\n3 full re-runs" });
@@ -520,7 +627,7 @@ bullets(s, [
 s.addNotes("Mention that CI was added late and immediately found a real defect - next slide.");
 
 // 14 — the CI catch
-s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Quality" });
+s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Appendix" });
 s.addText("CI tested the app, but not the thing that deploys it", { placeholder: "title" });
 card(s, { x: M, y: 1.5, w: 5.9, h: 2.1, fill: THEME.colors.lt2 });
 s.addText("What we found", { x: M + 0.3, y: 1.72, w: 5.3, h: 0.35, fontSize: 14, bold: true,
@@ -546,7 +653,7 @@ s.addText(
 s.addNotes("A good answer to 'what would you have done differently' - test the deployment path, not just the app.");
 
 // 15 — evaluation summary
-s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Quality" });
+s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Appendix" });
 s.addText("What we measured, and what it does not prove", { placeholder: "title" });
 const results = [
   ["25%", "of real interactions missed by name matching alone", THEME.colors.accent4],
@@ -576,32 +683,8 @@ s.addText(
 );
 s.addNotes("State the limits yourself. A marker who finds a limitation you did not mention stops believing the rest.");
 
-// 16 — limitations and future work
-pres.addSection({ title: "Close" });
-s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Close" });
-s.addText("What we did not build, and what comes next", { placeholder: "title" });
-s.addText("Known limitations", { x: M, y: 1.45, w: 5.9, h: 0.4, fontSize: 17, bold: true,
-  color: THEME.colors.accent4, isTextBox: true });
-bullets(s, [
-  "No interface for reading the audit log - the rows exist, nobody can read them",
-  "Schedules are wall-clock UTC; no per-user time zones",
-  "One interaction dataset",
-  "Append-only is enforced in the application, not cryptographically",
-  "Not deployed to a hosted environment",
-], { x: M, y: 1.9, w: 5.9, h: 3.4, fontSize: 14 });
-s.addText("Next, in priority order", { x: 6.9, y: 1.45, w: 5.7, h: 0.4, fontSize: 17, bold: true,
-  color: THEME.colors.accent1, isTextBox: true });
-bullets(s, [
-  "An audit review interface - the data exists and is unusable by the people it protects",
-  "A second interaction dataset, so we could speak to completeness",
-  "Per-user time zones",
-  "Notification delivery with status and retry",
-  "Alerting on repeated refused access attempts",
-], { x: 6.9, y: 1.9, w: 5.7, h: 3.4, fontSize: 14 });
-s.addNotes("Having a precise answer here is worth more than having fewer limitations.");
-
 // 17 — team and process
-s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Close" });
+s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Appendix" });
 s.addText("How we worked", { placeholder: "title" });
 const team = [
   ["Victory Orobosa", "Project Leader, Full-Stack", "Data model, safety engine, RxNorm and recall integration, dose scheduling, AI guardrails, both frontends, CI, evaluation"],
@@ -627,26 +710,9 @@ s.addText(
 );
 s.addNotes("Mention the integration conflict honestly - duplicated work, what caused it, what changed.");
 
-// 18 — close
-s = pres.addSlide({ masterName: "TITLE_DARK", sectionTitle: "Close" });
-s.addText("What SafeMed argues", { placeholder: "title" });
-s.addText(
-  [
-    { text: "Whether a drug combination is dangerous is a question with a sourced, checkable answer. That answer should come from the source.", options: { breakLine: true, fontSize: 17 } },
-    { text: "", options: { breakLine: true, fontSize: 8 } },
-    { text: "Explaining it to a frightened seventy-two-year-old is a language problem. That is where a language model earns its place.", options: { breakLine: true, fontSize: 17 } },
-    { text: "", options: { breakLine: true, fontSize: 8 } },
-    { text: "Keeping those two jobs apart is what lets SafeMed cite every claim it makes.", options: { fontSize: 17, bold: true, color: "9FD9D2" } },
-  ],
-  { placeholder: "body" }
-);
-s.addShape(pres.ShapeType.rect, { x: M, y: 1.95, w: 1.2, h: 0.09,
-  fill: { color: THEME.colors.accent2 }, line: { width: 0 }, objectName: "rule" });
-s.addText("github.com/victory113/safemed", { x: M, y: 6.3, w: 8, h: 0.4, fontSize: 14,
-  color: "7FA3B8", isTextBox: true });
-s.addNotes("End here. Take questions. The Q&A section of DEMO.md has prepared answers for the six most likely.");
-
-const out = path.join(__dirname, "SafeMed_Final_Presentation.pptx");
+// PPTX_OUT lets you build somewhere else when PowerPoint has the real file
+// open - Windows locks it, and the build fails with EBUSY.
+const out = process.env.PPTX_OUT || path.join(__dirname, "..", "SafeMed_Final_Presentation.pptx");
 pres.writeFile({ fileName: out }).then(async () => {
   if (applyTheme) await applyTheme(out, THEME);
   console.log("wrote", out);

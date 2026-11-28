@@ -11,8 +11,36 @@ npm install pptxgenjs
 NODE_PATH="$PWD/node_modules" node build.js
 ```
 
-18 slides. Speaker notes are on every slide; the live demonstration sits at
-slide 12 and follows [DEMO.md](../DEMO.md) rather than the slides.
+**Close PowerPoint first.** Windows locks an open `.pptx` and the build fails
+with `EBUSY`. To build anyway, send it somewhere else:
+
+```bash
+PPTX_OUT=/tmp/deck.pptx NODE_PATH="$PWD/node_modules" node build.js
+```
+
+## Structure
+
+21 slides, in two parts.
+
+**Slides 1–9 are the talk.** They are timed for a ten-minute slot with a
+four-and-a-half-minute live demonstration at slide 4. Each one carries its
+window in its speaker notes, as a `[1:05-1:50]` prefix, so presenter view tells
+you whether you are ahead without doing arithmetic. The words for every slide
+are in [PRESENTATION_SCRIPT.md](../PRESENTATION_SCRIPT.md).
+
+**Slides 10–21 are an appendix** and are never presented in sequence. They hold
+the detail that did not fit: why this is a system rather than a prompt, the
+stack, recalls, consent, the audit log, testing and CI, the CI gap, the
+evaluation summary, and how the team worked. Jump to one during questions by
+typing its number and pressing Enter in presenter view.
+
+Slides 10, 11 and 12 are the demo as screenshots — the patient screen, the two
+kinds of recall match, and the caregiver view. They exist so that a demo which
+will not start costs the word "live" and nothing else. The images in `img/` are
+captured from the running application, not mocked.
+
+The live demonstration at slide 4 follows [DEMO.md](../DEMO.md), which also
+holds the setup checklist and the full nine-beat version of the demo.
 
 Theme colours are applied by `apply_theme.js` from Claude's pptx skill. The
 build works without it — the deck simply falls back to Office's stock scheme

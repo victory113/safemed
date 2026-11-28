@@ -50,7 +50,7 @@ citation, and already has a severity drawn from the source data.
 asynchronous Celery worker, a React and TypeScript single-page frontend,
 160,235 imported interaction pairs, live integration with the FDA openFDA
 enforcement API, consent-based role access, an append-only audit trail, and
-194 automated tests running in continuous integration on every push.
+197 automated tests running in continuous integration on every push.
 
 **Measured, not asserted:**
 
@@ -290,7 +290,7 @@ recorded in the code so that the trade is deliberate rather than accidental.
 
 ### 6.1 Strategy
 
-**194 automated tests** across 16 files, run against a real PostgreSQL
+**197 automated tests** across 16 files, run against a real PostgreSQL
 instance rather than an in-memory substitute.
 
 | Area | Tests |
@@ -861,7 +861,7 @@ a hospital is actually in and we are not.
 
 SafeMed delivers the system it set out to deliver: medication management,
 continuous safety and recall monitoring, consent-based caregiver alerting,
-role-based access control and an append-only audit trail, with 194 automated
+role-based access control and an append-only audit trail, with 197 automated
 tests and continuous integration.
 
 The project's substantive contribution is not any individual feature but a
