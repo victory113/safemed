@@ -138,6 +138,27 @@ not been run — the script checks for this and says so rather than producing a
 patient whose safety screen is reassuringly empty. See
 [docs/DEMO.md](docs/DEMO.md) for the presentation run sheet.
 
+### The AI layer is off unless you supply a key
+
+`ANTHROPIC_API_KEY` is optional and `.env` is git-ignored, so a fresh clone
+runs **without** the plain-language explanation layer. This is intended
+behaviour, not a missing feature: AIR-05 requires that disabling AI entirely
+leaves every finding complete and displayable. Each finding still shows its
+own text, its severity, its source and the medications involved — the model
+only ever adds a second paragraph labelled *In plain language*, and
+`ai_explanation` is nullable precisely so that paragraph can be absent.
+
+To see that layer, put a key in `.env`, recreate the containers so they pick
+it up (`docker compose up -d --force-recreate api worker beat`), and run:
+
+```bash
+docker compose exec api python -c "from app.workers.tasks import explain_findings; print(explain_findings())"
+```
+
+Expect `'ok': 10`. Re-run it after any re-seed: seeding rebuilds the findings,
+and the explanations belong to the rows it replaces. A scheduled job does the
+same thing every ten minutes.
+
 ## Repository layout
 
 ```
