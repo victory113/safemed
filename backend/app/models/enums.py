@@ -51,7 +51,19 @@ class FindingType(str, enum.Enum):
 
 
 class Severity(str, enum.Enum):
-    """Drives who gets told. See NotificationService routing rules."""
+    """Drives who sees what, and how loudly.
+
+    Taken from the source dataset, never inferred (FR-11). Two decisions read
+    it: a caregiver is shown SEVERE findings only (FR-25), and the patient
+    interface expands SEVERE while collapsing the rest (FR-35).
+
+    There is no notification service. An earlier design routed alerts by
+    severity through one, and the `notifications` table still carries the
+    channel and delivery-status columns that design needed. Nothing writes a
+    row: caregiver alerting is delivered by the dashboard, and the gap is
+    recorded in FINAL_REPORT.md section 10.1 rather than left to be inferred
+    from a comment pointing at a class that was never written.
+    """
     MILD = "MILD"
     MODERATE = "MODERATE"
     SEVERE = "SEVERE"

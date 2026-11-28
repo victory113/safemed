@@ -177,7 +177,7 @@ Each requirement states its verification method. "Test" names a real test in
 | **NFR-08** | Accessibility | The interface shall use a minimum 18px base text size, minimum 44px touch targets, and shall never use colour as the only carrier of meaning. | `frontend/src/styles/`; HANDBOOK §8.5 |
 | **NFR-09** | Maintainability | The interaction data source shall sit behind an interface so it can be replaced without altering the safety engine. | `app/services/interactions/`; HANDBOOK §5 |
 | **NFR-10** | Verifiability | Every push shall run the full automated test suite, type checking, linting and a migration check. | `.github/workflows/ci.yml` |
-| **NFR-11** | Portability | The complete system shall start from a clean checkout with one command. | `docker compose up --build`; `docs/SETUP.md` |
+| **NFR-11** | Portability | The complete system shall reach a running, seeded state from a clean checkout with one command, requiring no host toolchain beyond Docker. | `scripts/setup.ps1`, `scripts/setup.sh`; equivalent manual steps in `README.md` and `docs/SETUP.md` |
 
 ---
 

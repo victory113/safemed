@@ -39,7 +39,7 @@ from __future__ import annotations
 import sys
 from datetime import date, datetime, time, timedelta, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from app.core.security import hash_password
 from app.db.session import SessionLocal
@@ -50,6 +50,7 @@ from app.models.enums import (
     MedicationStatus,
     UserRole,
 )
+from app.models.interaction import DrugInteraction
 from app.models.medication import DoseSchedule, Medication
 from app.models.safety import SafetyFinding, finding_medications
 from app.models.user import ConsentGrant, User
@@ -153,11 +154,45 @@ def build_dose_history(db, patient: User, days_back: int = 7) -> dict:
     return {"taken": taken, "missed": missed}
 
 
+def require_interaction_data(db) -> int:
+    """Refuse to seed into an empty interaction dataset.
+
+    Without this check the seed succeeds, the safety engine runs, and it
+    correctly reports no interactions - because there is nothing to compare
+    against. The dashboard then shows "No safety concerns found", which is
+    indistinguishable from a working system that happens to have good news.
+
+    That is the same false negative this project's own report is about
+    (FINAL_REPORT.md section 9.1), one layer out: an empty result must never
+    be allowed to look like a clean result. So we stop here and say why,
+    rather than producing a patient whose safety screen is reassuringly blank.
+    """
+    rows = db.scalar(select(func.count()).select_from(DrugInteraction)) or 0
+    if rows == 0:
+        print()
+        print("  STOPPING: the drug_interactions table is empty.")
+        print()
+        print("  Nothing has been changed. The safety engine would run and find")
+        print("  no interactions - not because Maria's medications are safe, but")
+        print("  because there is no dataset to check them against.")
+        print()
+        print("  Load it first, then seed again:")
+        print("    docker compose exec api python -m scripts.import_ddinter")
+        print()
+        print("  That takes a few minutes and ends with 160,235 interactions.")
+        return 0
+    print(f"  dataset   : {rows:,} interactions loaded")
+    return rows
+
+
 def main() -> int:
     print("SafeMed demo seed")
     print("=" * 60)
 
     with SessionLocal() as db:
+        if require_interaction_data(db) == 0:
+            return 1
+
         patient = get_or_create_user(db, PATIENT_EMAIL, "Maria Santos", UserRole.PATIENT)
         caregiver = get_or_create_user(db, CAREGIVER_EMAIL, "Elena Santos", UserRole.CAREGIVER)
         print(f"  patient   : {patient.full_name} <{patient.email}>")

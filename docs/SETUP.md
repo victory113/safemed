@@ -2,7 +2,7 @@
 
 Follow this from top to bottom. Do not skip steps.
 
-**Time needed:** about 30 minutes, mostly waiting for downloads.
+**Time needed:** about 40 minutes, mostly waiting for downloads.
 
 **This guide is for Mac.** Windows instructions are at the bottom in Appendix A.
 
@@ -266,11 +266,62 @@ To run other commands, open a **second** Terminal tab with `Command (⌘) + T`.
 
 ---
 
-# Part 7 — Check it works
+# Part 7 — Create the tables and load the data
+
+The server is running, but the database is **empty**. Starting the containers
+does not create the tables, and it does not load the drug data. Those are two
+separate commands, and you only need them once.
+
+Run both in a **second** Terminal tab (`Command (⌘) + T`), from
+`~/dev/safemed`. Leave the server window alone.
+
+### 7.1 — Create the tables
+
+> **Type this:**
+> ```
+> docker compose exec api alembic upgrade head
+> ```
+
+> **You should see, at the end:**
+> ```
+> INFO  [alembic.runtime.migration] Running upgrade ...
+> ```
+
+Until you run this, the database has no tables at all. Nothing in the
+application creates them — the containers run the web server, not the
+migrations.
+
+### 7.2 — Load the interaction dataset
+
+> **Type this:**
+> ```
+> docker compose exec api python -m scripts.import_ddinter
+> ```
+
+**This downloads eight files and takes a few minutes.** It prints each one as
+it goes.
+
+> **You should see, at the end:**
+> ```
+> 160,235 interactions
+> ```
+
+**Do not skip this.** Without it the table of known drug interactions is
+empty, so SafeMed checks every medication list against nothing and finds
+nothing wrong. That looks identical to an app that works and has good news,
+which is the most dangerous way for this particular system to be broken.
+
+Running it twice is harmless — it skips rows it already has.
+
+✅ **Checkpoint 7 complete.**
+
+---
+
+# Part 8 — Check it works
 
 Open your web browser and visit these two addresses.
 
-### 7.1 — Health check
+### 8.1 — Health check
 
 <http://localhost:8000/health>
 
@@ -285,7 +336,7 @@ talking to the database.
 If it says anything else, wait 10 seconds and refresh — the database may still
 be starting.
 
-### 7.2 — API documentation
+### 8.2 — API documentation
 
 <http://localhost:8000/docs>
 
@@ -298,7 +349,7 @@ and press "Try it out" to call the real server.
 
 ---
 
-# Part 8 — Everyday commands
+# Part 9 — Everyday commands
 
 Run these from `~/dev/safemed` in a second Terminal tab.
 
@@ -311,7 +362,10 @@ Run these from `~/dev/safemed` in a second Terminal tab.
 | See what is running | `docker compose ps` |
 | Watch the server logs | `docker compose logs -f api` |
 | Get the newest code from the team | `git pull` |
-| Start completely fresh (deletes the database) | `docker compose down -v` then `docker compose up --build` |
+| Start completely fresh (deletes the database) | `docker compose down -v`, then `docker compose up --build`, **then Part 7 again** |
+
+`down -v` deletes the tables *and* the 160,235 interactions. It is the one
+command that costs you a few minutes to recover from.
 
 ---
 

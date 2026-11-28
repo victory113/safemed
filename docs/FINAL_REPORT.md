@@ -201,7 +201,7 @@ organisation.
 | API | FastAPI, Pydantic v2 | Request validation and OpenAPI documentation derived from the same type declarations |
 | Data | PostgreSQL 16, SQLAlchemy 2.0, Alembic | Real constraint behaviour and server-side defaults; versioned, reversible schema |
 | Background | Celery, Celery Beat, Redis 7 | Monitoring must continue when nobody is using the application |
-| Containers | Docker Compose | The whole system starts from a clean checkout with one command |
+| Containers | Docker Compose | Five services from a clean checkout; `scripts/setup.sh` adds the schema and dataset steps starting them does not cover |
 | CI | GitHub Actions | Tests, type check, lint and migration check on every push |
 
 PostgreSQL was chosen over SQLite deliberately. The application depends on

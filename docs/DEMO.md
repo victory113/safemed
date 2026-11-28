@@ -460,6 +460,29 @@ question does not surprise you mid-sentence.
 > as wall-clock UTC. And a second interaction dataset, so we could say
 > something about completeness rather than only about our own consistency.
 
+**"A severe finding appears at 3am. Does Elena get a text message?"**
+
+> No, and that is a deliberate boundary rather than an unfinished feature.
+> Nothing is sent. She sees it when she opens the app.
+>
+> The `notifications` table exists with channel and delivery-status columns —
+> `EMAIL`, `SMS`, `PENDING`, `SENT`, `FAILED` — because that is what delivery
+> *would* need. Nothing writes a row. We stopped at the point where we would
+> have had to claim an alert was delivered without being able to prove it, and
+> an alert you cannot prove arrived is worse than a dashboard you know she can
+> read: it lets everyone assume she was told.
+>
+> The gap is in the report as a limitation, and wiring the model to a
+> transport **with delivery status and retry** is item four in future work. The
+> schema is the honest part — it records what the design would require, and the
+> ER diagram labels that relationship `"would alert"`.
+
+**"Could someone read the audit log in the app?"**
+
+> Not yet, and it's the first thing we'd build. The rows are written and
+> queryable, but only by SQL — which means the people the log protects cannot
+> see it. That is why I am showing it to you from `psql` and not from a screen.
+
 **"How much is AI-generated?"**
 
 > Answer this one honestly and specifically. Say what you designed, what you

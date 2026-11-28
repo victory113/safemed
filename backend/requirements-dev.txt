@@ -2,3 +2,10 @@
 # requirements.txt so tests can run inside the container.
 pytest>=8.3
 pytest-cov>=6.0
+
+# Document build: scripts/build_report.py turns the Markdown in docs/ into the
+# submitted PDFs. Declared here rather than installed by hand, because a
+# committed script whose dependencies are not committed works only on the
+# machine where someone once ran pip, and fails for everybody else.
+markdown>=3.7
+xhtml2pdf>=0.2.16
