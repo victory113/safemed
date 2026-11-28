@@ -22,27 +22,40 @@ class FakeBlock:
         self.text = text
 
 
+class FakeThinkingBlock:
+    """What the model returns when it reasons but never reaches an answer.
+
+    The real block carries no `.text`, which is why the service filters on
+    block type instead of assuming every block has one.
+    """
+
+    type = "thinking"
+
+
 class FakeResponse:
-    def __init__(self, text):
-        self.content = [FakeBlock(text)]
+    def __init__(self, text, stop_reason="end_turn", thinking_only=False):
+        self.content = [FakeThinkingBlock()] if thinking_only else [FakeBlock(text)]
+        self.stop_reason = stop_reason
 
 
 class FakeMessages:
-    def __init__(self, text=None, error=None):
+    def __init__(self, text=None, error=None, stop_reason="end_turn", thinking_only=False):
         self._text = text
         self._error = error
+        self._stop_reason = stop_reason
+        self._thinking_only = thinking_only
         self.calls = []
 
     def create(self, **kwargs):
         self.calls.append(kwargs)
         if self._error:
             raise self._error
-        return FakeResponse(self._text)
+        return FakeResponse(self._text, self._stop_reason, self._thinking_only)
 
 
 class FakeClient:
-    def __init__(self, text=None, error=None):
-        self.messages = FakeMessages(text, error)
+    def __init__(self, text=None, error=None, stop_reason="end_turn", thinking_only=False):
+        self.messages = FakeMessages(text, error, stop_reason, thinking_only)
 
 
 GOOD = (
@@ -158,3 +171,48 @@ def test_the_system_prompt_forbids_the_right_things():
     system = client.messages.calls[0]["system"].lower()
     for rule in ["never", "stop", "diagnose", "pharmacist"]:
         assert rule in system
+
+
+# ------------------------------- truncation is a bug, not a guardrail hit
+
+def test_running_out_of_tokens_is_reported_as_truncation_not_rejection():
+    """The two must never share a counter.
+
+    This model always reasons before answering, and that reasoning is paid for
+    out of max_tokens. Set the ceiling too low and the response arrives with a
+    thinking block, no text, and stop_reason "max_tokens". The empty string
+    then fails validation, so without this distinction a ceiling we chose
+    ourselves is recorded as the safety layer refusing the model's wording -
+    which would make a configuration bug look like evidence the guard works.
+    """
+    explainer = AIExplainer(
+        client=FakeClient(stop_reason="max_tokens", thinking_only=True)
+    )
+    result = explainer.explain(title="t", detail="d", source_name="DDInter")
+
+    assert result.status == "truncated"
+    assert result.status != "rejected"
+    assert result.text is None
+    assert not result.usable
+
+
+def test_an_empty_answer_that_was_not_truncated_is_still_rejected():
+    """Only max_tokens earns the truncated status; anything else is a refusal."""
+    explainer = AIExplainer(client=FakeClient(text="   ", stop_reason="end_turn"))
+    result = explainer.explain(title="t", detail="d", source_name="DDInter")
+
+    assert result.status == "rejected"
+
+
+def test_the_request_keeps_reasoning_proportionate_to_the_task():
+    """A rewrite does not need deep reasoning, and paying for it caused the bug."""
+    from app.services.ai_explainer import EFFORT, MAX_TOKENS
+
+    client = FakeClient(text=GOOD)
+    AIExplainer(client=client).explain(title="t", detail="d", source_name="DDInter")
+
+    call = client.messages.calls[0]
+    assert call["output_config"] == {"effort": EFFORT}
+    assert call["max_tokens"] == MAX_TOKENS
+    # Four sentences need nowhere near this; the headroom is for the reasoning.
+    assert MAX_TOKENS >= 1500

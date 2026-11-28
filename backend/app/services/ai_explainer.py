@@ -38,7 +38,20 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 MODEL = "claude-opus-5-5"
-MAX_TOKENS = 600
+
+# This model reasons before it answers and cannot be told not to, and those
+# reasoning tokens are spent out of max_tokens like any others. At 600 the
+# longer findings - recall notices, which carry more detail text - spent the
+# entire budget reasoning and returned a response containing no text at all:
+# stop_reason "max_tokens", one thinking block, nothing to show. Four of
+# eighteen findings were lost that way, and because an empty string fails
+# validation they were counted as guardrail rejections rather than as a bug.
+#
+# The ceiling is now well clear of what a four-sentence answer needs, and
+# EFFORT keeps the reasoning proportionate to the task, which is a rewrite
+# rather than a problem to solve.
+MAX_TOKENS = 2000
+EFFORT = "low"
 
 SYSTEM_PROMPT = """You rewrite medication safety findings into plain language for patients and their caregivers.
 
@@ -182,6 +195,7 @@ class AIExplainer:
                 model=self._model,
                 max_tokens=MAX_TOKENS,
                 system=SYSTEM_PROMPT,
+                output_config={"effort": EFFORT},
                 messages=[{"role": "user", "content": prompt}],
             )
         except Exception as exc:  # noqa: BLE001 - any failure degrades the same way
@@ -192,6 +206,17 @@ class AIExplainer:
             block.text for block in response.content
             if getattr(block, "type", None) == "text"
         ).strip()
+
+        # Truncation is our fault, not the model's, and it must not be counted
+        # as a guardrail rejection: "rejected" is supposed to mean the model
+        # strayed into advice and layer 3 caught it. Conflating the two makes a
+        # bug in our own configuration look like the safety checks working.
+        if getattr(response, "stop_reason", None) == "max_tokens" and not text:
+            logger.warning(
+                "AI explanation truncated: max_tokens (%s) exhausted before any "
+                "text was produced", MAX_TOKENS,
+            )
+            return ExplanationResult(None, "truncated", "max_tokens reached")
 
         ok, reason = validate(text)
         if not ok:

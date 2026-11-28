@@ -31,7 +31,10 @@ def explain_pending(db: Session, limit: int = 25, explainer: AIExplainer | None 
     )
     findings = list(db.execute(stmt).scalars().all())
 
-    counts = {"ok": 0, "rejected": 0, "unavailable": 0, "disabled": 0}
+    # "rejected" means the guardrails refused the model's wording. "truncated"
+    # means we never gave it room to answer. Keeping them apart is the point:
+    # one is the safety layer working, the other is a bug in our own request.
+    counts = {"ok": 0, "rejected": 0, "truncated": 0, "unavailable": 0, "disabled": 0}
 
     for finding in findings:
         names = [m.name_entered for m in finding.medications][:2]
