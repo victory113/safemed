@@ -32,6 +32,20 @@ docker compose exec api python -m scripts.seed_demo
 This resets Maria's data and rebuilds it, so it is safe to run twice. It should
 end with **10 findings created**. If it says anything else, run it once more.
 
+**Then generate the plain-language explanations.** Seeding rebuilds the
+findings, which throws away any explanations attached to the old ones, so this
+has to run *after* the seed, every time:
+
+```bash
+docker compose exec api python -c "from app.workers.tasks import explain_findings; print(explain_findings())"
+```
+
+Expect `'ok': 10`. If it reports `'disabled'`, there is no `ANTHROPIC_API_KEY`
+in `.env`; if `'unavailable'`, the key or the network is the problem. Either
+way the demo still works — every finding displays its own text and nothing
+breaks — so do not fix this on the day. The scheduled job would do it anyway
+within ten minutes, which is too slow to rely on.
+
 It does **not** clear the audit log — nothing can, which is the point. If you
 have rehearsed a few times, beat 7b will show older rows below the current
 run's. Either narrate only the top six, or clear it once before the real
@@ -322,6 +336,21 @@ If asked how solid it is:
 >
 > Turn the AI off completely and every finding here still works. The AI makes
 > SafeMed easier to understand. It is never what makes it correct."
+
+Point at one **In plain language** panel while you say it, and at the
+paragraph *above* it — the finding's own text, from the dataset. The panel is
+an addition to that paragraph, never a replacement, and the column it lives in
+is nullable on purpose.
+
+If you want the strongest version of the last sentence, say what the guardrails
+actually did:
+
+> "We've had the model's answer thrown away for real. On the recall findings it
+> wrote 'do not stop taking your medication' — which is good advice, and our
+> filter refused it anyway, because it matches a phrase we will not let through.
+> That's a false positive and we kept it. A rejected explanation costs us nicer
+> wording. An accepted one that told her to stop a medication costs something
+> we're not willing to risk."
 
 ---
 
